@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest(properties = "EKA_DB_PASSWORD=unused")
+@SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "EKA_LOCAL_USER_PASSWORD=unused"})
 @Import(PostgresTestSupport.class)
 class MigrationIntegrationTest {
 
@@ -29,7 +29,7 @@ class MigrationIntegrationTest {
                 "vector_store_ollama", "vector_store_openai");
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class);
-        assertThat(applied).isEqualTo(3);
+        assertThat(applied).isEqualTo(4);
     }
 
     @Test

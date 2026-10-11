@@ -22,7 +22,8 @@ class EkaPropertiesTest {
         "eka.retrieval.similarity-threshold=0.70",
         "eka.ingestion.concurrency=2", "eka.ingestion.provider-timeout=60s", "eka.ingestion.max-retries=3",
         "eka.ai.chat-model=m", "eka.ai.embedding-model=e", "eka.ai.embedding-dimensions=768",
-        "eka.ai.vector-table=vector_store_ollama", "eka.retention.purge-after-days=7"
+        "eka.ai.vector-table=vector_store_ollama", "eka.retention.purge-after-days=7",
+        "eka.extraction.max-characters=2000000", "eka.extraction.max-pages=500"
     };
 
     @Test
@@ -43,7 +44,7 @@ class EkaPropertiesTest {
     @Test
     void failsOnInvalidValue() {
         String[] bad = VALID.clone();
-        bad[bad.length - 2] = "eka.ai.vector-table=";
+        bad[bad.length - 4] = "eka.ai.vector-table=";
         runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
     }
 }

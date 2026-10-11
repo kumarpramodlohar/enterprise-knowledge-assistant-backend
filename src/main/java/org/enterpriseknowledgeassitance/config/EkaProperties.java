@@ -19,7 +19,8 @@ public record EkaProperties(
         @Valid @NotNull Retrieval retrieval,
         @Valid @NotNull Ingestion ingestion,
         @Valid @NotNull Ai ai,
-        @Valid @NotNull Retention retention) {
+        @Valid @NotNull Retention retention,
+        @Valid @NotNull Extraction extraction) {
 
     public record Upload(
             @Min(1) long maxFileSizeBytes,
@@ -44,4 +45,6 @@ public record EkaProperties(
             @NotBlank String vectorTable) {}
 
     public record Retention(@Min(1) int purgeAfterDays) {}
+
+    public record Extraction(@Min(1) long maxCharacters, @Min(1) int maxPages) {}
 }
