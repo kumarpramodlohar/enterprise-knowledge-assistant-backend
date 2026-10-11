@@ -3,6 +3,7 @@ package org.enterpriseknowledgeassitance.security;
 import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
+import org.enterpriseknowledgeassitance.api.ApiPaths;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,7 +18,7 @@ class MeController {
         this.access = access;
     }
 
-    @GetMapping("/api/v1/me")
+    @GetMapping(ApiPaths.ME)
     Me me(Principal principal) {
         String subject = principal.getName();
         return new Me(subject, access.roleOf(subject).map(Enum::name).orElse("NONE"),

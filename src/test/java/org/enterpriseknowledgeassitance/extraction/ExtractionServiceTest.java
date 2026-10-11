@@ -30,11 +30,11 @@ class ExtractionServiceTest {
 
     private static ExtractionService serviceWith(long maxChars, int maxPages) {
         return new ExtractionService(new EkaProperties(
-                new EkaProperties.Upload(10_485_760, Set.of("pdf", "docx", "txt", "md")),
+                new EkaProperties.Upload(10_485_760, Set.of("pdf", "docx", "txt", "md"), 255, 100, 20, 50, "application/octet-stream"),
                 new EkaProperties.Chunking(800, 100), new EkaProperties.Retrieval(5, 4000, 0.7),
                 new EkaProperties.Ingestion(2, Duration.ofSeconds(60), 3),
-                new EkaProperties.Ai("m", "e", 768, "t"), new EkaProperties.Retention(7),
-                new EkaProperties.Extraction(maxChars, maxPages)));
+                new EkaProperties.Ai("m", "e", 768, "t", 32), new EkaProperties.Retention(7),
+                new EkaProperties.Extraction(maxChars, maxPages, 0.01, 200L * 1024 * 1024)));
     }
 
     private static InputStream in(byte[] b) {
@@ -120,9 +120,9 @@ class ExtractionServiceTest {
 
     @Test
     void rejectsCorruptAndMislabelledContent() throws Exception {
-        assertReason("a.pdf", "not a pdf".getBytes(), Reason.CORRUPT);
-        assertReason("a.docx", "not a zip".getBytes(), Reason.CORRUPT);
-        assertReason("a.docx", pdf(1, "x"), Reason.CORRUPT);
+        assertReason("a.pdf", "not a pdf".getBytes(), Reason.CONTENT_MISMATCH);
+        assertReason("a.docx", "not a zip".getBytes(), Reason.CONTENT_MISMATCH);
+        assertReason("a.docx", pdf(1, "x"), Reason.CONTENT_MISMATCH);
         assertReason("a.pdf", "%PDF-1.4 garbage".getBytes(), Reason.CORRUPT);
         assertReason("a.txt", new byte[] {(byte) 0xC3, 0x28}, Reason.CORRUPT);
         assertReason("a.txt", "a\0b".getBytes(), Reason.CORRUPT);

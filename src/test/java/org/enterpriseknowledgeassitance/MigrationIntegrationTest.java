@@ -29,7 +29,7 @@ class MigrationIntegrationTest {
                 "vector_store_ollama", "vector_store_openai");
         Integer applied = jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class);
-        assertThat(applied).isEqualTo(4);
+        assertThat(applied).isEqualTo(5);
     }
 
     @Test

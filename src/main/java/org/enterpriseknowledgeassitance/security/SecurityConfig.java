@@ -1,5 +1,6 @@
 package org.enterpriseknowledgeassitance.security;
 
+import org.enterpriseknowledgeassitance.web.ErrorCodes;
 import jakarta.servlet.http.HttpServletResponse;
 import org.enterpriseknowledgeassitance.web.CorrelationIdFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -68,11 +69,11 @@ class SecurityConfig {
     }
 
     private AuthenticationEntryPoint entryPoint() {
-        return (req, res, ex) -> write(res, 401, "UNAUTHENTICATED", "Authentication is required");
+        return (req, res, ex) -> write(res, 401, ErrorCodes.UNAUTHENTICATED, "Authentication is required");
     }
 
     private AccessDeniedHandler deniedHandler() {
-        return (req, res, ex) -> write(res, 403, "FORBIDDEN", "Access denied");
+        return (req, res, ex) -> write(res, 403, ErrorCodes.FORBIDDEN, "Access denied");
     }
 
     private void write(HttpServletResponse res, int status, String code, String message) throws java.io.IOException {

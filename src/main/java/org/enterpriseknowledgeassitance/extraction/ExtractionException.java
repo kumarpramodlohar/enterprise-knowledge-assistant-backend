@@ -3,7 +3,7 @@ package org.enterpriseknowledgeassitance.extraction;
 /** Safe, recordable processing failure. The reason is a stable code and never includes document content. */
 public class ExtractionException extends Exception {
 
-    public enum Reason { UNSUPPORTED_TYPE, CORRUPT, EMPTY, TOO_LARGE, ENCRYPTED }
+    public enum Reason { UNSUPPORTED_TYPE, CONTENT_MISMATCH, CORRUPT, EMPTY, TOO_LARGE, ENCRYPTED }
 
     private final Reason reason;
 

@@ -22,8 +22,8 @@ public class ExtractionService {
 
     public ExtractionService(EkaProperties props) {
         this.limits = new ExtractionLimits(props.extraction().maxCharacters(), props.extraction().maxPages());
-        ZipSecureFile.setMinInflateRatio(0.01);
-        ZipSecureFile.setMaxEntrySize(200L * 1024 * 1024);
+        ZipSecureFile.setMinInflateRatio(props.extraction().zipMinInflateRatio());
+        ZipSecureFile.setMaxEntrySize(props.extraction().zipMaxEntrySizeBytes());
         ZipSecureFile.setMaxTextSize(limits.maxCharacters() * 4);
     }
 
@@ -77,7 +77,7 @@ public class ExtractionService {
             default -> true;
         };
         if (!ok) {
-            throw new ExtractionException(ExtractionException.Reason.CORRUPT);
+            throw new ExtractionException(ExtractionException.Reason.CONTENT_MISMATCH);
         }
     }
 

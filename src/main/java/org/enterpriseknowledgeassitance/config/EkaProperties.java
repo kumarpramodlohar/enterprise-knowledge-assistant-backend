@@ -1,6 +1,7 @@
 package org.enterpriseknowledgeassitance.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
@@ -24,9 +25,19 @@ public record EkaProperties(
 
     public record Upload(
             @Min(1) long maxFileSizeBytes,
-            @NotNull Set<String> allowedExtensions) {}
+            @NotNull Set<String> allowedExtensions,
+            @Min(1) int maxFileNameLength,
+            @Min(1) int maxMetadataLength,
+            @Min(0) int maxTags,
+            @Min(1) int maxTagLength,
+            @NotBlank String defaultContentType) {}
 
-    public record Chunking(@Min(1) int sizeTokens, @Min(0) int overlapTokens) {}
+    public record Chunking(@Min(1) int sizeTokens, @Min(0) int overlapTokens) {
+        @AssertTrue(message = "overlapTokens must be smaller than sizeTokens")
+        public boolean isOverlapValid() {
+            return overlapTokens < sizeTokens;
+        }
+    }
 
     public record Retrieval(
             @Min(1) int topK,
@@ -42,9 +53,14 @@ public record EkaProperties(
             @NotBlank String chatModel,
             @NotBlank String embeddingModel,
             @Min(1) int embeddingDimensions,
-            @NotBlank String vectorTable) {}
+            @NotBlank String vectorTable,
+            @Min(1) int embeddingBatchSize) {}
 
     public record Retention(@Min(1) int purgeAfterDays) {}
 
-    public record Extraction(@Min(1) long maxCharacters, @Min(1) int maxPages) {}
+    public record Extraction(
+            @Min(1) long maxCharacters,
+            @Min(1) int maxPages,
+            @DecimalMin("0.0") @DecimalMax("1.0") double zipMinInflateRatio,
+            @Min(1) long zipMaxEntrySizeBytes) {}
 }

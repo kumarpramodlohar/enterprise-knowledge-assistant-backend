@@ -17,13 +17,16 @@ class EkaPropertiesTest {
 
     private static final String[] VALID = {
         "eka.upload.max-file-size-bytes=10485760", "eka.upload.allowed-extensions=pdf,docx,txt,md",
+        "eka.upload.max-file-name-length=255", "eka.upload.max-metadata-length=100", "eka.upload.max-tags=20",
+        "eka.upload.max-tag-length=50", "eka.upload.default-content-type=application/octet-stream",
         "eka.chunking.size-tokens=800", "eka.chunking.overlap-tokens=100",
         "eka.retrieval.top-k=5", "eka.retrieval.context-token-budget=4000",
         "eka.retrieval.similarity-threshold=0.70",
         "eka.ingestion.concurrency=2", "eka.ingestion.provider-timeout=60s", "eka.ingestion.max-retries=3",
         "eka.ai.chat-model=m", "eka.ai.embedding-model=e", "eka.ai.embedding-dimensions=768",
-        "eka.ai.vector-table=vector_store_ollama", "eka.retention.purge-after-days=7",
-        "eka.extraction.max-characters=2000000", "eka.extraction.max-pages=500"
+        "eka.ai.vector-table=vector_store_ollama", "eka.ai.embedding-batch-size=32", "eka.retention.purge-after-days=7",
+        "eka.extraction.max-characters=2000000", "eka.extraction.max-pages=500",
+        "eka.extraction.zip-min-inflate-ratio=0.01", "eka.extraction.zip-max-entry-size-bytes=209715200"
     };
 
     @Test
@@ -44,7 +47,16 @@ class EkaPropertiesTest {
     @Test
     void failsOnInvalidValue() {
         String[] bad = VALID.clone();
-        bad[bad.length - 4] = "eka.ai.vector-table=";
+        bad[bad.length - 7] = "eka.ai.vector-table=";
+        runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
+    }
+
+    @Test
+    void failsWhenOverlapIsNotSmallerThanChunkSize() {
+        String[] bad = VALID.clone();
+        for (int i = 0; i < bad.length; i++) {
+            if (bad[i].startsWith("eka.chunking.overlap-tokens")) bad[i] = "eka.chunking.overlap-tokens=800";
+        }
         runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
     }
 }
