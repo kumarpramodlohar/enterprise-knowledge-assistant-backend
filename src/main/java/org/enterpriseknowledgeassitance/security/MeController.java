@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class MeController {
 
-    record Me(String subject, String role, List<UUID> readableCollectionIds) {}
+    record Me(String subject, String role, List<UUID> readableCollectionIds, List<UUID> manageableCollectionIds) {}
 
     private final AccessService access;
 
@@ -22,6 +22,6 @@ class MeController {
     Me me(Principal principal) {
         String subject = principal.getName();
         return new Me(subject, access.roleOf(subject).map(Enum::name).orElse("NONE"),
-                access.readableCollectionIds(subject));
+                access.readableCollectionIds(subject), access.manageableCollectionIds(subject));
     }
 }

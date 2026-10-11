@@ -110,7 +110,8 @@ class SecurityIntegrationTest {
         mvc.perform(get("/api/v1/me").with(httpBasic("dev", "pw")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("MEMBER"))
-                .andExpect(jsonPath("$.readableCollectionIds[0]").value(granted.toString()));
+                .andExpect(jsonPath("$.readableCollectionIds[0]").value(granted.toString()))
+                .andExpect(jsonPath("$.manageableCollectionIds").isEmpty());
     }
 
     @Test
@@ -149,6 +150,15 @@ class SecurityIntegrationTest {
     @Test
     void adminReadsAllCollections() {
         assertThat(access.readableCollectionIds("boss")).containsExactlyInAnyOrder(granted, other);
+        assertThat(access.manageableCollectionIds("boss")).containsExactlyInAnyOrder(granted, other);
+    }
+
+    @Test
+    void manageableCollectionsAreResolvedSeparatelyFromReadableCollections() {
+        jdbc.sql("UPDATE collection_grants SET permission = 'MANAGE' WHERE subject = 'dev' AND collection_id = :c")
+                .param("c", granted).update();
+        assertThat(access.readableCollectionIds("dev")).containsExactly(granted);
+        assertThat(access.manageableCollectionIds("dev")).containsExactly(granted);
     }
 
     @Test

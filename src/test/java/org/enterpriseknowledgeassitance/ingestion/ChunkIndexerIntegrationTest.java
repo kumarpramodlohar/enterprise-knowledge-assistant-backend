@@ -107,6 +107,10 @@ class ChunkIndexerIntegrationTest {
                 .extracting(SearchHit::documentId).containsOnly(docA);
         assertThat(indexer.search("refunds", List.of(colA, colB), 5, 0.0, new SearchFilter(null, null, List.of("travel"))))
                 .extracting(SearchHit::documentId).containsOnly(docB);
+        jdbc.sql("UPDATE documents SET tags = ARRAY['travel,restricted'] WHERE id = :d").param("d", docB).update();
+        assertThat(indexer.search("refunds", List.of(colA, colB), 5, 0.0,
+                new SearchFilter(null, null, List.of("travel,restricted"))))
+                .extracting(SearchHit::documentId).containsOnly(docB);
     }
 
     @Test
@@ -115,6 +119,16 @@ class ChunkIndexerIntegrationTest {
         assertThat(indexer.search("quantum chromodynamics", List.of(colA), 5, 0.7, SearchFilter.NONE)).isEmpty();
         jdbc.sql("UPDATE documents SET deleted_at = now() WHERE id = :d").param("d", docA).update();
         assertThat(indexer.search("refunds", List.of(colA), 5, 0.0, SearchFilter.NONE)).isEmpty();
+    }
+
+    @Test
+    void queuedAndFailedDocumentsAreExcludedBeforePassagesAreReturned() throws Exception {
+        index(docA, "refunds are issued within thirty days");
+        index(docB, "refunds for flights follow airline rules");
+        jdbc.sql("UPDATE documents SET status = 'QUEUED' WHERE id = :d").param("d", docA).update();
+        jdbc.sql("UPDATE documents SET status = 'FAILED' WHERE id = :d").param("d", docB).update();
+
+        assertThat(indexer.search("refunds", List.of(colA, colB), 5, 0.0, SearchFilter.NONE)).isEmpty();
     }
 
     @Test

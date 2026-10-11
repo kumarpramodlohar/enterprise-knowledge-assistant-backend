@@ -15,11 +15,20 @@ public class FakeEmbeddingModel implements EmbeddingModel {
 
     public volatile int dimensions = 768;
     public volatile boolean fail = false;
+    public volatile long delayMillis = 0;
     public final AtomicInteger calls = new AtomicInteger();
 
     @Override
     public EmbeddingResponse call(EmbeddingRequest request) {
         calls.incrementAndGet();
+        if (delayMillis > 0) {
+            try {
+                Thread.sleep(delayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted");
+            }
+        }
         if (fail) {
             throw new IllegalStateException("provider down: secret-detail");
         }

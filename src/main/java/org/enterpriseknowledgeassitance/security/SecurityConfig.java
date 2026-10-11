@@ -19,11 +19,21 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 
 @Configuration
 @EnableConfigurationProperties(LocalAuthProperties.class)
 class SecurityConfig {
+
+    @Bean
+    FilterRegistrationBean<OidcUserProvisioningFilter> oidcProvisioningFilterRegistration(
+            OidcUserProvisioningFilter filter) {
+        var registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
 
     @Bean
     PasswordEncoder passwordEncoder() {
@@ -52,11 +62,12 @@ class SecurityConfig {
 
     @Bean
     @Profile("!local")
-    SecurityFilterChain oidcChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain oidcChain(HttpSecurity http, OidcUserProvisioningFilter provisioningFilter) throws Exception {
         common(http);
         http.oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults())
                 .authenticationEntryPoint(entryPoint())
-                .accessDeniedHandler(deniedHandler()));
+                .accessDeniedHandler(deniedHandler()))
+                .addFilterAfter(provisioningFilter, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

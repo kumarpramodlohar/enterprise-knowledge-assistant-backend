@@ -55,6 +55,16 @@ public class AccessService {
                 .query(UUID.class).list();
     }
 
+    public List<UUID> manageableCollectionIds(String subject) {
+        if (roleOf(subject).filter(r -> r == Role.ADMIN).isPresent()) {
+            return jdbc.sql("SELECT id FROM collections").query(UUID.class).list();
+        }
+        return jdbc.sql("""
+                SELECT collection_id FROM collection_grants
+                WHERE subject = :s AND permission = 'MANAGE'
+                """).param("s", subject).query(UUID.class).list();
+    }
+
     /** Resolves the collection of a document only if the subject may read it (for citation resolution). */
     public UUID requireReadableDocument(String subject, UUID documentId) {
         UUID collectionId = jdbc.sql("SELECT collection_id FROM documents WHERE id = :d AND deleted_at IS NULL")

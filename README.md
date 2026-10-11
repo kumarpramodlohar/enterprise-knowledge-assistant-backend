@@ -2,7 +2,7 @@
 
 Ask questions about your company's documents and get answers you can check.
 
-> **Status:** Planning and early setup. The documents describing what to build are written. The backend is an empty Spring Boot project and the frontend is a blank React project. Nothing described below works yet.
+> **Status:** MVP foundation, document ingestion/management, semantic retrieval and chat API are implemented. Check the specification task list for verified completion and outstanding release-readiness work.
 
 ## The problem
 
@@ -82,14 +82,39 @@ EnterpriseKnowledgeAssitance/
 
 ## Run it locally
 
-The backend currently only starts an empty application. Requires Java 21.
+Requires Java 21, Docker Compose, and Ollama with the configured chat and embedding models pulled. Use placeholders in `.env.example`; do not commit real credentials.
 
 ```bash
-./gradlew bootRun     # start the backend
-./gradlew test        # run tests
+cp .env.example .env
+# Replace change-me values in .env with local-only passwords.
+docker compose up -d postgres
+docker compose ps
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+./gradlew bootRun
 ```
 
-For the frontend, see its [README](../../frontend/EnterpriseAssistance-UI/README.md).
+The backend defaults to the `local` profile and PostgreSQL on `localhost:5433`; Flyway applies migrations during startup. The development HTTP Basic user is read from `EKA_LOCAL_USER` and `EKA_LOCAL_USER_PASSWORD`. It is held in memory for authentication, so seed a matching application identity and collection grant separately:
+
+```bash
+PGPASSWORD='<local-only-password>' psql -h localhost -p 5433 -U eka_app -d eka \
+  -v ON_ERROR_STOP=1 -v local_subject=dev -v collection_name=General \
+  -f src/main/resources/db/seed/local-dev.sql
+```
+
+The seed grants `MANAGE` only to the configured local subject in the `General` collection. It contains no passwords. Pass the configured local username as `local_subject` and choose a collection name with the two `psql -v` values. For OIDC deployments, a first valid JWT creates a database identity with `MEMBER` role and no grants; an administrator must grant collection access out of band before the user can see content. The chosen bootstrap mechanism is SQL; no admin API/UI is provided.
+
+Readiness is available at `GET /actuator/health`. Set `VITE_API_BASE_URL=http://localhost:8080` in the frontend `.env` and follow the frontend README for UI startup. The deployed profile additionally requires `OPENAI_API_KEY` and `EKA_OIDC_ISSUER_URI`; never use local HTTP Basic credentials outside `local`.
+
+Useful verification commands:
+
+```bash
+./gradlew test
+./gradlew bootRun
+curl -i http://localhost:8080/actuator/health
+```
+
+If startup fails, check PostgreSQL readiness/credentials, Flyway output, Ollama reachability and exact model names. A provider outage returns a safe API error; it is not reported as a successful answer. For the frontend, see its repository README.
 
 ## Important note
 

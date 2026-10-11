@@ -32,8 +32,9 @@ class ExtractionServiceTest {
         return new ExtractionService(new EkaProperties(
                 new EkaProperties.Upload(10_485_760, Set.of("pdf", "docx", "txt", "md"), 255, 100, 20, 50, "application/octet-stream"),
                 new EkaProperties.Chunking(800, 100), new EkaProperties.Retrieval(5, 4000, 0.7),
-                new EkaProperties.Ingestion(2, Duration.ofSeconds(60), 3),
-                new EkaProperties.Ai("m", "e", 768, "t", 32), new EkaProperties.Retention(7),
+                new EkaProperties.Ingestion(2, Duration.ofSeconds(60), 3, Duration.ofSeconds(2),
+                        Duration.ofSeconds(5), Duration.ofMinutes(15), false),
+                new EkaProperties.Ai("m", "e", 768, "t", 32), new EkaProperties.Retention(7, Duration.ofHours(1), 50, false),
                 new EkaProperties.Extraction(maxChars, maxPages, 0.01, 200L * 1024 * 1024)));
     }
 

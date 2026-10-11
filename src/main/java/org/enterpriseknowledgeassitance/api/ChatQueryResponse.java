@@ -8,4 +8,5 @@ public record ChatQueryResponse(
         boolean insufficientEvidence,
         List<Citation> citations,
         String correlationId,
-        long timingMs) {}
+        long timingMs,
+        long retrievalMs) {}

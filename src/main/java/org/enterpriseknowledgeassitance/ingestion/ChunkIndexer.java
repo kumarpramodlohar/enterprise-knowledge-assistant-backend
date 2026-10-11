@@ -1,11 +1,18 @@
 package org.enterpriseknowledgeassitance.ingestion;
 
 import org.enterpriseknowledgeassitance.web.ErrorCodes;
+import jakarta.annotation.PreDestroy;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import org.enterpriseknowledgeassitance.config.EkaProperties;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -43,11 +50,12 @@ public class ChunkIndexer {
             JOIN document_chunks c ON c.id = v.id
             JOIN documents d ON d.id = c.document_id
             WHERE d.deleted_at IS NULL
+              AND d.status = 'INDEXED'
               AND d.collection_id IN (:cols)
               AND v.metadata->>'model' = :model
               AND (CAST(:version AS text) IS NULL OR d.version = :version)
               AND (CAST(:dtype AS text) IS NULL OR d.document_type = :dtype)
-              AND (CAST(:tags AS text) IS NULL OR d.tags && string_to_array(:tags, ','))
+              AND (CAST(:tags AS text) IS NULL OR d.tags && CAST(:tags AS text[]))
             ORDER BY v.embedding <=> CAST(:q AS vector)
             LIMIT :k""";
 
@@ -56,9 +64,12 @@ public class ChunkIndexer {
     private final TransactionTemplate tx;
     private final String insertVector;
     private final String searchSql;
+    private final String vectorTable;
     private final String model;
     private final int dimensions;
     private final int batchSize;
+    private final long timeoutMillis;
+    private final ExecutorService providerCalls = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChunkIndexer(JdbcClient jdbc, EmbeddingModel embeddings, TransactionTemplate tx, EkaProperties props) {
         this.jdbc = jdbc;
@@ -68,11 +79,13 @@ public class ChunkIndexer {
         if (!TABLE.matcher(table).matches()) {
             throw new IllegalStateException("eka.ai.vector-table must match " + TABLE.pattern());
         }
+        this.vectorTable = table;
         this.insertVector = INSERT_VECTOR.formatted(table);
         this.searchSql = SEARCH.formatted(table);
         this.model = props.ai().embeddingModel();
         this.dimensions = props.ai().embeddingDimensions();
         this.batchSize = props.ai().embeddingBatchSize();
+        this.timeoutMillis = props.ingestion().providerTimeout().toMillis();
     }
 
     /**
@@ -104,13 +117,16 @@ public class ChunkIndexer {
         if (collectionIds.isEmpty() || topK < 1) {
             return List.of();
         }
+        if (!hasEligibleChunks(collectionIds, filter)) {
+            return List.of();
+        }
         String q = literal(embedAll(List.of(query)).get(0));
         boolean hasTags = filter.tags() != null && !filter.tags().isEmpty();
         return jdbc.sql(searchSql)
                 .param("q", q).param("cols", collectionIds).param("model", model).param("k", topK)
                 .param("version", filter.version(), Types.VARCHAR)
                 .param("dtype", filter.documentType(), Types.VARCHAR)
-                .param("tags", hasTags ? String.join(",", filter.tags()) : null, Types.VARCHAR)
+                .param("tags", hasTags ? postgresArrayLiteral(filter.tags()) : null, Types.VARCHAR)
                 .query((rs, n) -> new SearchHit(rs.getObject("id", UUID.class),
                         rs.getObject("document_id", UUID.class), rs.getObject("collection_id", UUID.class),
                         rs.getString("file_name"), (Integer) rs.getObject("page_number"), rs.getString("section"),
@@ -118,14 +134,45 @@ public class ChunkIndexer {
                 .list().stream().filter(h -> h.score() >= minSimilarity).toList();
     }
 
+    private boolean hasEligibleChunks(Collection<UUID> collectionIds, SearchFilter filter) {
+        boolean hasTags = filter.tags() != null && !filter.tags().isEmpty();
+        String sql = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM %s v
+                    JOIN document_chunks c ON c.id = v.id
+                    JOIN documents d ON d.id = c.document_id
+                    WHERE d.deleted_at IS NULL
+                      AND d.status = 'INDEXED'
+                      AND d.collection_id IN (:cols)
+                      AND v.metadata->>'model' = :model
+                      AND (CAST(:version AS text) IS NULL OR d.version = :version)
+                      AND (CAST(:dtype AS text) IS NULL OR d.document_type = :dtype)
+                      AND (CAST(:tags AS text) IS NULL OR d.tags && CAST(:tags AS text[]))
+                )
+                """.formatted(vectorTable);
+        return jdbc.sql(sql).param("cols", collectionIds).param("model", model)
+                .param("version", filter.version(), Types.VARCHAR)
+                .param("dtype", filter.documentType(), Types.VARCHAR)
+                .param("tags", hasTags ? postgresArrayLiteral(filter.tags()) : null, Types.VARCHAR)
+                .query(Boolean.class).single();
+    }
+
     private List<float[]> embedAll(List<String> texts) throws EmbeddingFailedException {
         List<float[]> out = new ArrayList<>(texts.size());
         for (int from = 0; from < texts.size(); from += batchSize) {
             List<String> batch = texts.subList(from, Math.min(from + batchSize, texts.size()));
             List<float[]> result;
+            Future<List<float[]>> call = providerCalls.submit(() -> embeddings.embed(batch));
             try {
-                result = embeddings.embed(batch);
-            } catch (RuntimeException e) {
+                result = call.get(timeoutMillis, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                call.cancel(true);
+                throw new EmbeddingFailedException(ErrorCodes.EMBEDDING_TIMEOUT, e);
+            } catch (ExecutionException e) {
+                throw new EmbeddingFailedException(ErrorCodes.EMBEDDING_PROVIDER_FAILED, e.getCause());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 throw new EmbeddingFailedException(ErrorCodes.EMBEDDING_PROVIDER_FAILED, e);
             }
             if (result == null || result.size() != batch.size()) {
@@ -146,6 +193,11 @@ public class ChunkIndexer {
         return out;
     }
 
+    @PreDestroy
+    void shutdown() {
+        providerCalls.shutdownNow();
+    }
+
     private static String literal(float[] v) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < v.length; i++) {
@@ -155,5 +207,11 @@ public class ChunkIndexer {
             sb.append(v[i]);
         }
         return sb.append(']').toString();
+    }
+
+    private static String postgresArrayLiteral(List<String> values) {
+        return "{" + values.stream()
+                .map(value -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .collect(java.util.stream.Collectors.joining(",")) + "}";
     }
 }

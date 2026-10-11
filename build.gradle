@@ -54,4 +54,7 @@ dependencyManagement {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Background schedulers are off in tests; tests that need them enable them explicitly.
+    environment 'EKA_WORKER_ENABLED', 'false'
+    environment 'EKA_PURGE_ENABLED', 'false'
 }

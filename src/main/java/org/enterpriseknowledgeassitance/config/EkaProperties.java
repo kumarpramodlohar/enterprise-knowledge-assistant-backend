@@ -47,7 +47,11 @@ public record EkaProperties(
     public record Ingestion(
             @Min(1) int concurrency,
             @NotNull Duration providerTimeout,
-            @Min(0) int maxRetries) {}
+            @Min(0) int maxRetries,
+            @NotNull Duration pollInterval,
+            @NotNull Duration retryBackoff,
+            @NotNull Duration staleAfter,
+            boolean workerEnabled) {}
 
     public record Ai(
             @NotBlank String chatModel,
@@ -56,7 +60,11 @@ public record EkaProperties(
             @NotBlank String vectorTable,
             @Min(1) int embeddingBatchSize) {}
 
-    public record Retention(@Min(1) int purgeAfterDays) {}
+    public record Retention(
+            @Min(1) int purgeAfterDays,
+            @NotNull Duration purgeInterval,
+            @Min(1) int purgeBatchSize,
+            boolean purgeEnabled) {}
 
     public record Extraction(
             @Min(1) long maxCharacters,

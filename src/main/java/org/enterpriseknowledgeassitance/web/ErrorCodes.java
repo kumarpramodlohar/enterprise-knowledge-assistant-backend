@@ -13,7 +13,10 @@ public final class ErrorCodes {
     public static final String UNPROCESSABLE_DOCUMENT = "UNPROCESSABLE_DOCUMENT";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
     public static final String EMBEDDING_PROVIDER_FAILED = "EMBEDDING_PROVIDER_FAILED";
+    public static final String EMBEDDING_TIMEOUT = "EMBEDDING_TIMEOUT";
     public static final String EMBEDDING_DIMENSION_MISMATCH = "EMBEDDING_DIMENSION_MISMATCH";
+    public static final String CHAT_PROVIDER_FAILED = "CHAT_PROVIDER_FAILED";
+    public static final String CHAT_PROVIDER_TIMEOUT = "CHAT_PROVIDER_TIMEOUT";
 
     private ErrorCodes() {}
 }

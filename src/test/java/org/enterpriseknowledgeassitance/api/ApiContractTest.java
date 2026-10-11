@@ -34,7 +34,7 @@ class ApiContractTest {
     static class QueryProbe {
         @PostMapping("/test/chat")
         ChatQueryResponse chat(@Valid @RequestBody ChatQueryRequest r) {
-            return new ChatQueryResponse(null, true, List.of(), "c", 1);
+            return new ChatQueryResponse(null, true, List.of(), "c", 1, 0);
         }
     }
 
