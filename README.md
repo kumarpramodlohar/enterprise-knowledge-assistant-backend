@@ -104,6 +104,8 @@ PGPASSWORD='<local-only-password>' psql -h localhost -p 5433 -U eka_app -d eka \
 
 The seed grants `MANAGE` only to the configured local subject in the `General` collection. It contains no passwords. Pass the configured local username as `local_subject` and choose a collection name with the two `psql -v` values. For OIDC deployments, a first valid JWT creates a database identity with `MEMBER` role and no grants; an administrator must grant collection access out of band before the user can see content. The chosen bootstrap mechanism is SQL; no admin API/UI is provided.
 
+**Keycloak sign-in with local Ollama (no OpenAI key):** run with `SPRING_PROFILES_ACTIVE=local,oidc` and set `EKA_OIDC_ISSUER_URI` (for example `http://127.0.0.1:8180/realms/eka`). The `oidc` profile validates Keycloak bearer tokens and disables HTTP Basic. The `deployed` profile is for OpenAI and also needs `OPENAI_API_KEY`; changing embedding provider requires re-indexing documents.
+
 Readiness is available at `GET /actuator/health`. Set `VITE_API_BASE_URL=http://localhost:8080` in the frontend `.env` and follow the frontend README for UI startup. The deployed profile additionally requires `OPENAI_API_KEY` and `EKA_OIDC_ISSUER_URI`; never use local HTTP Basic credentials outside `local`.
 
 Useful verification commands:

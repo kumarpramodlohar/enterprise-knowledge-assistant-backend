@@ -41,7 +41,7 @@ class SecurityConfig {
     }
 
     @Bean
-    @Profile("local")
+    @Profile("local & !oidc")
     SecurityFilterChain localChain(HttpSecurity http) throws Exception {
         common(http);
         http.httpBasic(b -> b.authenticationEntryPoint(entryPoint()));
@@ -49,7 +49,7 @@ class SecurityConfig {
     }
 
     @Bean
-    @Profile("local")
+    @Profile("local & !oidc")
     UserDetailsService localUsers(LocalAuthProperties props, PasswordEncoder encoder) {
         var users = props.users().stream()
                 .map(u -> User.withUsername(u.username())
@@ -60,8 +60,9 @@ class SecurityConfig {
         return new InMemoryUserDetailsManager(users);
     }
 
+    /** Active in deployed environments and whenever the `oidc` profile is added (for example `local,oidc`). */
     @Bean
-    @Profile("!local")
+    @Profile("!local | oidc")
     SecurityFilterChain oidcChain(HttpSecurity http, OidcUserProvisioningFilter provisioningFilter) throws Exception {
         common(http);
         http.oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults())
