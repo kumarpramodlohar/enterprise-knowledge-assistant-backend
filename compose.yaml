@@ -1,14 +1,14 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_DB: ${EKA_DB_NAME:-eka}
-      POSTGRES_USER: ${EKA_DB_USER:-eka_app}
-      POSTGRES_PASSWORD: ${EKA_DB_PASSWORD:?Set EKA_DB_PASSWORD in .env (see .env.example)}
+      POSTGRES_USER: ${EKA_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "${EKA_DB_PORT:-5433}:5432"
     volumes:
-      - eka-pgdata:/var/lib/postgresql/data
+      - eka-pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

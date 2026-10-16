@@ -1,4 +1,4 @@
-dpackage org.enterpriseknowledgeassitance.chat;
+package org.enterpriseknowledgeassitance.chat;
 
 import java.util.ArrayList;
 import java.util.List;
