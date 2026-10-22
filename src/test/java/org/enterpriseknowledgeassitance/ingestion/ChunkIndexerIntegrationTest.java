@@ -114,6 +114,16 @@ class ChunkIndexerIntegrationTest {
     }
 
     @Test
+    void diagnosticCandidateWindowDoesNotExpandAnswerTopK() throws Exception {
+        index(docA, "refunds are issued within thirty days");
+        index(docB, "refunds for flights follow airline rules");
+
+        List<SearchHit> hits = indexer.search("refunds", List.of(colA, colB), 1, 0.0, SearchFilter.NONE);
+
+        assertThat(hits).hasSize(1);
+    }
+
+    @Test
     void softDeletedDocumentsAndLowSimilarityAreExcluded() throws Exception {
         index(docA, "refunds are issued within thirty days");
         assertThat(indexer.search("quantum chromodynamics", List.of(colA), 5, 0.7, SearchFilter.NONE)).isEmpty();

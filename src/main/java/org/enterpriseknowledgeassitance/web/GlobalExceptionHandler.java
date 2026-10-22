@@ -35,7 +35,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<ApiError> tooLarge(MaxUploadSizeExceededException e) {
-        return build(HttpStatus.CONTENT_TOO_LARGE, ErrorCodes.FILE_TOO_LARGE, "File exceeds the maximum upload size");
+        return build(HttpStatus.CONTENT_TOO_LARGE, ErrorCodes.FILE_TOO_LARGE, "File exceeds the maximum allowed size");
     }
 
     @ExceptionHandler(Exception.class)

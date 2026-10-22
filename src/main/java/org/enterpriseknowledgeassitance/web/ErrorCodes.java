@@ -9,6 +9,8 @@ public final class ErrorCodes {
     public static final String NOT_FOUND = "NOT_FOUND";
     public static final String DUPLICATE_DOCUMENT = "DUPLICATE_DOCUMENT";
     public static final String FILE_TOO_LARGE = "FILE_TOO_LARGE";
+    public static final String PDF_PAGE_LIMIT_EXCEEDED = "PDF_PAGE_LIMIT_EXCEEDED";
+    public static final String EXTRACTED_CONTENT_TOO_LARGE = "EXTRACTED_CONTENT_TOO_LARGE";
     public static final String UNSUPPORTED_TYPE = "UNSUPPORTED_TYPE";
     public static final String UNPROCESSABLE_DOCUMENT = "UNPROCESSABLE_DOCUMENT";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";

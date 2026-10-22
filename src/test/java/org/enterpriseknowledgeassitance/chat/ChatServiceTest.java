@@ -32,7 +32,7 @@ class ChatServiceTest {
 
     private EkaProperties properties(Duration timeout, int contextBudget) {
         return new EkaProperties(null, null,
-                new EkaProperties.Retrieval(5, contextBudget, 0.70),
+                new EkaProperties.Retrieval(5, contextBudget, 10, 0.70),
                 new EkaProperties.Ingestion(1, timeout, 0, Duration.ofSeconds(1), Duration.ZERO, Duration.ofMinutes(1),
                         false),
                 null, null, null);

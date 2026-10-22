@@ -42,6 +42,7 @@ public record EkaProperties(
     public record Retrieval(
             @Min(1) int topK,
             @Min(1) int contextTokenBudget,
+            @Min(1) int diagnosticCandidateCount,
             @DecimalMin("0.0") @DecimalMax("1.0") double similarityThreshold) {}
 
     public record Ingestion(

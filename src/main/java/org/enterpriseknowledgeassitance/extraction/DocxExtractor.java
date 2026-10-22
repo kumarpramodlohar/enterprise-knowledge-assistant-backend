@@ -29,7 +29,7 @@ class DocxExtractor implements DocumentExtractor {
                 int start = (int) total;
                 total += text.length() + 1;
                 if (total > limits.maxCharacters()) {
-                    throw new ExtractionException(ExtractionException.Reason.TOO_LARGE);
+                    throw new ExtractionException(ExtractionException.Reason.EXTRACTED_CONTENT_TOO_LARGE);
                 }
                 out.add(new ExtractedSegment(text + "\n", null, section, start));
             }

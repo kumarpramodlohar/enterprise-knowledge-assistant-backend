@@ -1,0 +1,30 @@
+{"id":"q-001","question":"Which file formats can a Knowledge Manager upload?","answerable":true,"evidence":["supported PDF, DOCX, TXT, or Markdown document"]}
+{"id":"q-002","question":"What happens to a document's content after deletion completes?","answerable":true,"evidence":["after deletion completes, its content is excluded from retrieval"]}
+{"id":"q-003","question":"Which ingestion states does EKA show for a document?","answerable":true,"evidence":["queued, processing, indexed, or failed"]}
+{"id":"q-004","question":"Which broker is mentioned for ingestion and is deferred after the MVP?","answerable":true,"evidence":["Message broker (Kafka) for ingestion"]}
+{"id":"q-005","question":"What proposed target is set for supported and relevant answers on the curated test set?","answerable":true,"evidence":["At least 80% of a curated 50-question test set"]}
+{"id":"q-006","question":"What is the proposed citation validity target for factual answers?","answerable":true,"evidence":["At least 95% of factual answers in the evaluation set include valid source citations"]}
+{"id":"q-007","question":"Why does each embedding provider need its own vector table?","answerable":true,"evidence":["Each embedding provider has its own vector dimension"]}
+{"id":"q-008","question":"When are the chunks and vectors of a deleted document permanently removed?","answerable":true,"evidence":["removes its chunks, vectors and derived data 7 days later"]}
+{"id":"q-009","question":"When is a duplicate upload rejected?","answerable":true,"evidence":["if a non-deleted document with the same checksum exists in the collection"]}
+{"id":"q-010","question":"Can a Spring AI advisor be the only place where access control is enforced?","answerable":true,"evidence":["must not become the only enforcement point for access control"]}
+{"id":"q-011","question":"What execution model is proposed for ingestion in the first thin slice?","answerable":true,"evidence":["use a bounded Spring-managed background executor"]}
+{"id":"q-012","question":"Under what condition should a durable broker such as Kafka be introduced?","answerable":true,"evidence":["outgrow the simple worker, introduce a durable broker such as Kafka"]}
+{"id":"q-013","question":"Who is the Operator / Developer persona?","answerable":true,"evidence":["A person who supports the running application and diagnoses service health"]}
+{"id":"q-014","question":"Which retrieval metrics are reported in evaluation and on how many questions?","answerable":true,"evidence":["Recall@5 and MRR or nDCG@5 on 30–50 questions"]}
+{"id":"q-015","question":"How should groundedness and usefulness be assessed?","answerable":true,"evidence":["Human review using a documented rubric"]}
+{"id":"q-016","question":"What is the preferred implementation stack?","answerable":true,"evidence":["Java 21, Spring Boot 3.x, Spring AI, React + TypeScript, and PostgreSQL with pgvector"]}
+{"id":"q-017","question":"How should the UI handle model-produced text?","answerable":true,"evidence":["The UI should render model-produced text safely"]}
+{"id":"q-018","question":"How should uploaded document text be treated with respect to security?","answerable":true,"evidence":["Treat uploaded document text as untrusted input"]}
+{"id":"q-019","question":"Which keyword search option is proposed first for hybrid retrieval?","answerable":true,"evidence":["PostgreSQL full-text search is the proposed first keyword-search option"]}
+{"id":"q-020","question":"Are original uploaded files retained?","answerable":true,"evidence":["Original files are not stored (DEC-005)"]}
+{"id":"q-021","question":"What does the Administrator persona do?","answerable":true,"evidence":["A privileged user responsible for managing roles, settings, and security-relevant activity."]}
+{"id":"q-022","question":"What should the system do when no adequate evidence exists?","answerable":true,"evidence":["If there is no adequate evidence, EKA clearly says so rather than inventing a factual answer."]}
+{"id":"u-001","question":"What is the monthly cloud hosting cost of EKA?","answerable":false,"evidence":[]}
+{"id":"u-002","question":"Who is the chief executive officer of the company that owns EKA?","answerable":false,"evidence":[]}
+{"id":"u-003","question":"How do I configure single sign-on with Okta for EKA?","answerable":false,"evidence":[]}
+{"id":"u-004","question":"What is the capital of France?","answerable":false,"evidence":[]}
+{"id":"u-005","question":"What Kubernetes cluster size is required to deploy EKA?","answerable":false,"evidence":[]}
+{"id":"u-006","question":"What is the refund policy for enterprise customers?","answerable":false,"evidence":[]}
+{"id":"u-007","question":"How many users use EKA in production today?","answerable":false,"evidence":[]}
+{"id":"u-008","question":"Which mobile app stores is the EKA iOS app published on?","answerable":false,"evidence":[]}

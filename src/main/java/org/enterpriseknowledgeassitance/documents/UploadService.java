@@ -126,6 +126,12 @@ public class UploadService {
                 case TOO_LARGE -> tooLarge();
                 case EMPTY -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
                         "The file contains no extractable text");
+                case PDF_PAGE_LIMIT_EXCEEDED -> new ApiException(HttpStatus.CONTENT_TOO_LARGE,
+                        ErrorCodes.PDF_PAGE_LIMIT_EXCEEDED,
+                        "PDF exceeds the maximum allowed page count of " + props.extraction().maxPages());
+                case EXTRACTED_CONTENT_TOO_LARGE -> new ApiException(HttpStatus.CONTENT_TOO_LARGE,
+                        ErrorCodes.EXTRACTED_CONTENT_TOO_LARGE,
+                        "Extracted content exceeds the maximum allowed size");
                 case CORRUPT, ENCRYPTED -> new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.UNPROCESSABLE_DOCUMENT,
                         "The file is corrupt or protected and cannot be read (" + e.reason() + ")");
             };
@@ -180,7 +186,8 @@ public class UploadService {
     }
 
     private static ApiException tooLarge() {
-        return new ApiException(HttpStatus.CONTENT_TOO_LARGE, ErrorCodes.FILE_TOO_LARGE, "File exceeds the maximum allowed size");
+        return new ApiException(HttpStatus.CONTENT_TOO_LARGE, ErrorCodes.FILE_TOO_LARGE,
+                "File exceeds the maximum allowed size");
     }
 
     private static ApiException unsupported() {

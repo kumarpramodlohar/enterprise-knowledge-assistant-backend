@@ -38,7 +38,7 @@ class TextExtractor implements DocumentExtractor {
             throw new ExtractionException(ExtractionException.Reason.CORRUPT);
         }
         if (text.length() > limits.maxCharacters()) {
-            throw new ExtractionException(ExtractionException.Reason.TOO_LARGE);
+            throw new ExtractionException(ExtractionException.Reason.EXTRACTED_CONTENT_TOO_LARGE);
         }
         if (text.startsWith("\uFEFF")) {
             text = text.substring(1);

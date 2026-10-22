@@ -32,7 +32,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
-@SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "EKA_LOCAL_USER_PASSWORD=pw"})
+@SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "EKA_LOCAL_USER_PASSWORD=pw",
+        "eka.extraction.max-characters=1000"})
 @AutoConfigureMockMvc
 @Import(PostgresTestSupport.class)
 class DocumentUploadIntegrationTest {
@@ -87,15 +88,21 @@ class DocumentUploadIntegrationTest {
     }
 
     private static byte[] pdf() throws IOException {
+        return pdf(1);
+    }
+
+    private static byte[] pdf(int pages) throws IOException {
         try (PDDocument d = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDPage page = new PDPage();
-            d.addPage(page);
-            try (PDPageContentStream cs = new PDPageContentStream(d, page)) {
-                cs.beginText();
-                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
-                cs.newLineAtOffset(50, 700);
-                cs.showText("Refund policy text");
-                cs.endText();
+            for (int i = 0; i < pages; i++) {
+                PDPage page = new PDPage();
+                d.addPage(page);
+                try (PDPageContentStream cs = new PDPageContentStream(d, page)) {
+                    cs.beginText();
+                    cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                    cs.newLineAtOffset(50, 700);
+                    cs.showText("Refund policy text");
+                    cs.endText();
+                }
             }
             d.save(out);
             return out.toByteArray();
@@ -144,16 +151,27 @@ class DocumentUploadIntegrationTest {
 
     @Test
     void acceptsFileExactlyAtLimitAndRejectsOverLimit() throws Exception {
-        byte[] atLimit = new byte[10 * 1024 * 1024];
-        byte[] pattern = txt("word ");
-        for (int i = 0; i < atLimit.length; i++) {
-            atLimit[i] = pattern[i % pattern.length];
-        }
-        upload(manage, "big.txt", atLimit).andExpect(status().isAccepted());
+        byte[] atLimit = java.util.Arrays.copyOf(pdf(), 10 * 1024 * 1024);
+        upload(manage, "big.pdf", atLimit).andExpect(status().isAccepted());
         long before = count("documents");
         upload(manage, "bigger.txt", new byte[10 * 1024 * 1024 + 1]).andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"));
         assertThat(count("documents")).isEqualTo(before);
+    }
+
+    @Test
+    void distinguishesPdfPageAndExtractedContentLimitsFromFileByteLimit() throws Exception {
+        upload(manage, "too-many-pages.pdf", pdf(501))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("PDF_PAGE_LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.message").value("PDF exceeds the maximum allowed page count of 500"));
+        assertNothingCreated();
+
+        upload(manage, "too-much-text.txt", txt("x".repeat(1001)))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("EXTRACTED_CONTENT_TOO_LARGE"))
+                .andExpect(jsonPath("$.message").value("Extracted content exceeds the maximum allowed size"));
+        assertNothingCreated();
     }
 
     @Test

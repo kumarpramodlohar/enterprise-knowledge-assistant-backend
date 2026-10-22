@@ -18,6 +18,9 @@ import org.enterpriseknowledgeassitance.config.EkaProperties;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.enterpriseknowledgeassitance.web.CorrelationIdFilter;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -27,6 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class ChunkIndexer {
 
+    private static final Logger log = LoggerFactory.getLogger(ChunkIndexer.class);
     private static final Pattern TABLE = Pattern.compile("vector_store_[a-z0-9_]+");
 
     private static final String INSERT_CHUNK = """
@@ -68,6 +72,7 @@ public class ChunkIndexer {
     private final String model;
     private final int dimensions;
     private final int batchSize;
+    private final int diagnosticCandidateCount;
     private final long timeoutMillis;
     private final ExecutorService providerCalls = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -85,6 +90,7 @@ public class ChunkIndexer {
         this.model = props.ai().embeddingModel();
         this.dimensions = props.ai().embeddingDimensions();
         this.batchSize = props.ai().embeddingBatchSize();
+        this.diagnosticCandidateCount = props.retrieval().diagnosticCandidateCount();
         this.timeoutMillis = props.ingestion().providerTimeout().toMillis();
     }
 
@@ -122,8 +128,9 @@ public class ChunkIndexer {
         }
         String q = literal(embedAll(List.of(query)).get(0));
         boolean hasTags = filter.tags() != null && !filter.tags().isEmpty();
-        return jdbc.sql(searchSql)
-                .param("q", q).param("cols", collectionIds).param("model", model).param("k", topK)
+        List<SearchHit> candidates = jdbc.sql(searchSql)
+                .param("q", q).param("cols", collectionIds).param("model", model)
+                .param("k", Math.max(topK, diagnosticCandidateCount))
                 .param("version", filter.version(), Types.VARCHAR)
                 .param("dtype", filter.documentType(), Types.VARCHAR)
                 .param("tags", hasTags ? postgresArrayLiteral(filter.tags()) : null, Types.VARCHAR)
@@ -131,7 +138,16 @@ public class ChunkIndexer {
                         rs.getObject("document_id", UUID.class), rs.getObject("collection_id", UUID.class),
                         rs.getString("file_name"), (Integer) rs.getObject("page_number"), rs.getString("section"),
                         rs.getString("content"), rs.getDouble("score")))
-                .list().stream().filter(h -> h.score() >= minSimilarity).toList();
+                .list();
+        int diagnosticLimit = Math.min(diagnosticCandidateCount, candidates.size());
+        for (int i = 0; i < diagnosticLimit; i++) {
+            SearchHit candidate = candidates.get(i);
+            log.info("Retrieval candidate correlationId={} rank={} documentId={} chunkId={} page={} score={} meetsThreshold={}",
+                    CorrelationIdFilter.current(), i + 1, candidate.documentId(), candidate.chunkId(),
+                    candidate.pageNumber(), candidate.score(), candidate.score() >= minSimilarity);
+        }
+        // Preserve the previous behavior: threshold applies only to the original top-K window.
+        return candidates.stream().limit(topK).filter(h -> h.score() >= minSimilarity).toList();
     }
 
     private boolean hasEligibleChunks(Collection<UUID> collectionIds, SearchFilter filter) {

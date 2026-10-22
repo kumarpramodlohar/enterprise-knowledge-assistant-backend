@@ -21,7 +21,7 @@ class EkaPropertiesTest {
         "eka.upload.max-tag-length=50", "eka.upload.default-content-type=application/octet-stream",
         "eka.chunking.size-tokens=800", "eka.chunking.overlap-tokens=100",
         "eka.retrieval.top-k=5", "eka.retrieval.context-token-budget=4000",
-        "eka.retrieval.similarity-threshold=0.70",
+        "eka.retrieval.diagnostic-candidate-count=10", "eka.retrieval.similarity-threshold=0.70",
         "eka.ingestion.concurrency=2", "eka.ingestion.provider-timeout=60s", "eka.ingestion.max-retries=3",
         "eka.ingestion.poll-interval=2s", "eka.ingestion.retry-backoff=5s", "eka.ingestion.stale-after=15m",
         "eka.ingestion.worker-enabled=false", "eka.retention.purge-interval=1h", "eka.retention.purge-batch-size=50",
@@ -51,6 +51,17 @@ class EkaPropertiesTest {
     void failsOnInvalidValue() {
         String[] bad = VALID.clone();
         bad[bad.length - 7] = "eka.ai.vector-table=";
+        runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
+    }
+
+    @Test
+    void failsWhenDiagnosticCandidateCountIsNotPositive() {
+        String[] bad = VALID.clone();
+        for (int i = 0; i < bad.length; i++) {
+            if (bad[i].startsWith("eka.retrieval.diagnostic-candidate-count")) {
+                bad[i] = "eka.retrieval.diagnostic-candidate-count=0";
+            }
+        }
         runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
     }
 

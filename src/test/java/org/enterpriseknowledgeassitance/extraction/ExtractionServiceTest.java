@@ -31,7 +31,7 @@ class ExtractionServiceTest {
     private static ExtractionService serviceWith(long maxChars, int maxPages) {
         return new ExtractionService(new EkaProperties(
                 new EkaProperties.Upload(10_485_760, Set.of("pdf", "docx", "txt", "md"), 255, 100, 20, 50, "application/octet-stream"),
-                new EkaProperties.Chunking(800, 100), new EkaProperties.Retrieval(5, 4000, 0.7),
+                new EkaProperties.Chunking(800, 100), new EkaProperties.Retrieval(5, 4000, 10, 0.7),
                 new EkaProperties.Ingestion(2, Duration.ofSeconds(60), 3, Duration.ofSeconds(2),
                         Duration.ofSeconds(5), Duration.ofMinutes(15), false),
                 new EkaProperties.Ai("m", "e", 768, "t", 32), new EkaProperties.Retention(7, Duration.ofHours(1), 50, false),
@@ -131,10 +131,11 @@ class ExtractionServiceTest {
 
     @Test
     void enforcesResourceLimits() throws Exception {
-        assertReason("a.pdf", pdf(6, "x"), Reason.TOO_LARGE);
+        assertReason("a.pdf", pdf(6, "x"), Reason.PDF_PAGE_LIMIT_EXCEEDED);
         ExtractionService tiny = serviceWith(10, 5);
         assertThatThrownBy(() -> tiny.extract("a.txt", in("this is longer than ten".getBytes())))
-                .isInstanceOfSatisfying(ExtractionException.class, e -> assertThat(e.reason()).isEqualTo(Reason.TOO_LARGE));
+                .isInstanceOfSatisfying(ExtractionException.class,
+                        e -> assertThat(e.reason()).isEqualTo(Reason.EXTRACTED_CONTENT_TOO_LARGE));
     }
 
     @Test

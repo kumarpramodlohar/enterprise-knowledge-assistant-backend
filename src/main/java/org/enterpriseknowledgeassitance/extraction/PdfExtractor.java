@@ -18,7 +18,7 @@ class PdfExtractor implements DocumentExtractor {
             }
             int pages = pdf.getNumberOfPages();
             if (pages > limits.maxPages()) {
-                throw new ExtractionException(ExtractionException.Reason.TOO_LARGE);
+                throw new ExtractionException(ExtractionException.Reason.PDF_PAGE_LIMIT_EXCEEDED);
             }
             PDFTextStripper stripper = new PDFTextStripper();
             List<ExtractedSegment> out = new ArrayList<>();
@@ -29,7 +29,7 @@ class PdfExtractor implements DocumentExtractor {
                 String text = stripper.getText(pdf);
                 total += text.length();
                 if (total > limits.maxCharacters()) {
-                    throw new ExtractionException(ExtractionException.Reason.TOO_LARGE);
+                    throw new ExtractionException(ExtractionException.Reason.EXTRACTED_CONTENT_TOO_LARGE);
                 }
                 if (!text.isBlank()) {
                     out.add(new ExtractedSegment(text, p, null, (int) (total - text.length())));
