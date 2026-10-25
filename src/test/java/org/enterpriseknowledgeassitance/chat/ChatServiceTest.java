@@ -33,6 +33,7 @@ class ChatServiceTest {
     private EkaProperties properties(Duration timeout, int contextBudget) {
         return new EkaProperties(null, null,
                 new EkaProperties.Retrieval(5, contextBudget, 10, 0.70),
+                new EkaProperties.Crag(false, 5, 1, Duration.ofSeconds(60)),
                 new EkaProperties.Ingestion(1, timeout, 0, Duration.ofSeconds(1), Duration.ZERO, Duration.ofMinutes(1),
                         false),
                 null, null, null);
@@ -50,7 +51,11 @@ class ChatServiceTest {
         ChatClient client = mock(ChatClient.class);
         when(access.readableCollectionIds("member")).thenReturn(List.of(allowed));
         when(builder.build()).thenReturn(client);
-        ChatService service = new ChatService(indexer, access, builder, properties(Duration.ofSeconds(1), 100));
+        ChatService service = new ChatService(indexer, access, builder, mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                properties(Duration.ofSeconds(1), 100));
 
         var result = service.query("member",
                 new ChatQueryRequest("private data?", new org.enterpriseknowledgeassitance.api.ChatFilters(
@@ -83,7 +88,11 @@ class ChatServiceTest {
         when(request.call()).thenReturn(response);
         when(response.content()).thenReturn("Refunds are available. [citation:unknown]");
 
-        ChatService service = new ChatService(indexer, access, builder, properties(Duration.ofSeconds(1), 12));
+        ChatService service = new ChatService(indexer, access, builder, mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                properties(Duration.ofSeconds(1), 12));
         var result = service.query("member", new ChatQueryRequest("what is the refund policy?",
                 new org.enterpriseknowledgeassitance.api.ChatFilters(List.of(allowed), "v1", "policy",
                         List.of("support"))));
@@ -114,11 +123,18 @@ class ChatServiceTest {
                 org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
         when(builder.build()).thenReturn(client);
 
-        ChatService service = new ChatService(indexer, access, builder, properties(Duration.ofSeconds(1), 100));
+        ChatService service = new ChatService(indexer, access, builder, mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                properties(Duration.ofSeconds(1), 100));
         var result = service.query("member", new ChatQueryRequest("unanswerable question", null));
 
         assertThat(result.insufficientEvidence()).isTrue();
         assertThat(result.answer()).isNull();
+        verify(indexer, never()).searchCandidates(anyString(), org.mockito.ArgumentMatchers.anyCollection(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyDouble(),
+                org.mockito.ArgumentMatchers.any());
         verify(client, never()).prompt();
     }
 
@@ -144,7 +160,11 @@ class ChatServiceTest {
             return "answer";
         });
 
-        ChatService service = new ChatService(indexer, access, builder, properties(Duration.ofMillis(5), 40));
+        ChatService service = new ChatService(indexer, access, builder, mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                properties(Duration.ofMillis(5), 40));
         assertThatThrownBy(() -> service.query("member", new ChatQueryRequest("question", null)))
                 .isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);

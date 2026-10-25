@@ -116,6 +116,10 @@ Each chat retrieval logs the nearest eligible candidates with correlation ID, ra
 
 For a local diagnostic run, set `EKA_RETRIEVAL_TOP_K=10` and optionally lower `EKA_RETRIEVAL_SIMILARITY_THRESHOLD` (for example `0.30`), then restart the backend and repeat the query. Compare candidate scores and `meetsThreshold` in the backend logs, then restore the normal values. Lower thresholds may admit irrelevant passages; these settings are for diagnosis, not a recommended permanent change. `EKA_RETRIEVAL_DIAGNOSTIC_CANDIDATE_COUNT` controls how many candidates are logged.
 
+### Corrective RAG (P1–P4)
+
+CRAG is disabled by default. Set `EKA_CRAG_ENABLED=true` to enable the internal evaluator/refinement/rewrite flow. External search needs the additional `EKA_WEB_SEARCH_ENABLED=true` and a server-side `TAVILY_API_KEY`; the Ask page also requires a user to check **Search the public web** for that question. Only that question is sent to Tavily, and only after the internal rewrite/retrieval fails. Search sends no passages or identifiers; questions and provider results are not logged or stored. Search results are untrusted and returned as separately labeled external citations. Search timeout defaults to 8 seconds (`EKA_WEB_SEARCH_TIMEOUT`). The integration requests at most five basic results and does not fetch full pages or provider-generated answers. Paired baseline/CRAG evaluation setup is in [evaluation/README.md](evaluation/README.md).
+
 Useful verification commands:
 
 ```bash

@@ -127,6 +127,8 @@ class ChunkIndexerIntegrationTest {
     void softDeletedDocumentsAndLowSimilarityAreExcluded() throws Exception {
         index(docA, "refunds are issued within thirty days");
         assertThat(indexer.search("quantum chromodynamics", List.of(colA), 5, 0.7, SearchFilter.NONE)).isEmpty();
+        assertThat(indexer.searchCandidates("quantum chromodynamics", List.of(colA), 5, 0.7, SearchFilter.NONE))
+                .hasSize(1);
         jdbc.sql("UPDATE documents SET deleted_at = now() WHERE id = :d").param("d", docA).update();
         assertThat(indexer.search("refunds", List.of(colA), 5, 0.0, SearchFilter.NONE)).isEmpty();
     }

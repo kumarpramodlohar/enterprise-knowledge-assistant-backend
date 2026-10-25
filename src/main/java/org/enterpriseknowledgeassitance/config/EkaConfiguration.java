@@ -6,5 +6,5 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties(EkaProperties.class)
+@EnableConfigurationProperties({EkaProperties.class, WebSearchProperties.class})
 class EkaConfiguration {}

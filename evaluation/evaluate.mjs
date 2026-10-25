@@ -7,6 +7,8 @@ const reviewSheetPath = process.env.EKA_EVAL_REVIEW_SHEET;
 const reviewSheet = [];
 const datasetPath = process.argv[2] ?? process.env.EKA_EVALUATION_DATASET;
 const baseUrl = process.env.EKA_API_BASE_URL ?? "http://localhost:8080";
+const cragBaseUrl = process.env.EKA_EVAL_CRAG_BASE_URL;
+const singleMode = process.env.EKA_EVAL_MODE ?? "baseline";
 const username = process.env.EKA_LOCAL_USER;
 const password = process.env.EKA_LOCAL_USER_PASSWORD;
 const modelVersion = process.env.EKA_EVAL_MODEL_VERSION;
@@ -42,88 +44,136 @@ if (!cases.length)
   throw new Error("The evaluation dataset has no labelled questions.");
 
 const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-const results = [];
-for (const item of cases) {
-  const started = performance.now();
-  const response = await fetch(
-    `${baseUrl.replace(/\/$/, "")}/api/v1/chat/query`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: authorization,
-        "Content-Type": "application/json",
+const endpoints = cragBaseUrl
+  ? [
+      { mode: "baseline", url: baseUrl },
+      { mode: "crag", url: cragBaseUrl },
+    ]
+  : [{ mode: singleMode, url: baseUrl }];
+const reports = [];
+const reviewRows = [];
+
+for (const endpoint of endpoints) {
+  const results = [];
+  for (const item of cases) {
+    const started = performance.now();
+    const response = await fetch(
+      `${endpoint.url.replace(/\/$/, "")}/api/v1/chat/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ question: item.question }),
       },
-      body: JSON.stringify({ question: item.question }),
-    },
-  );
-  const latencyMs = performance.now() - started;
-  if (!response.ok) {
-    throw new Error(
-      `Evaluation request ${item.id} returned HTTP ${response.status}.`,
     );
+    const latencyMs = performance.now() - started;
+    if (!response.ok) {
+      throw new Error(
+        `Evaluation request ${item.id} (${endpoint.mode}) returned HTTP ${response.status}.`,
+      );
+    }
+    const result = await response.json();
+    const citations = Array.isArray(result.citations) ? result.citations : [];
+    reviewRows.push({
+      mode: endpoint.mode,
+      id: item.id,
+      question: item.question,
+      answerable: item.answerable,
+      answer: result.answer ?? null,
+      insufficientEvidence: result.insufficientEvidence === true,
+      citations: citations.map((c) => ({
+        chunkId: c.chunkId,
+        fileName: c.fileName,
+        snippet: c.snippet,
+      })),
+      humanReview: { groundedness: null, usefulness: null },
+    });
+    const expected = new Set(item.relevantChunkIds);
+    const ranks = citations.map((citation) => citation.chunkId);
+    const matched = ranks.filter((id) => expected.has(id));
+    const human = item.humanReview ?? {};
+    results.push({
+      id: item.id,
+      answerable: item.answerable,
+      insufficientEvidence: result.insufficientEvidence === true,
+      recallAt5: expected.size ? new Set(matched).size / expected.size : null,
+      reciprocalRank: expected.size
+        ? ranks.findIndex((id) => expected.has(id)) < 0
+          ? 0
+          : 1 / (ranks.findIndex((id) => expected.has(id)) + 1)
+        : null,
+      citationFieldCompleteness: citations.length
+        ? citations.filter(
+            (citation) =>
+              typeof citation.documentId === "string" &&
+              typeof citation.chunkId === "string" &&
+              typeof citation.fileName === "string" &&
+              typeof citation.snippet === "string",
+          ).length / citations.length
+        : null,
+      latencyMs: Math.round(latencyMs),
+      retrievalMs: Number.isFinite(result.retrievalMs) ? result.retrievalMs : null,
+      groundedness: human.groundedness ?? null,
+      usefulness: human.usefulness ?? null,
+    });
   }
-  const result = await response.json();
-  reviewSheet.push({
-    id: item.id,
-    question: item.question,
-    answerable: item.answerable,
-    answer: result.answer ?? null,
-    insufficientEvidence: result.insufficientEvidence === true,
-    citations: (result.citations ?? []).map((c) => ({
-      chunkId: c.chunkId,
-      fileName: c.fileName,
-      snippet: c.snippet,
-    })),
-    humanReview: { groundedness: null, usefulness: null },
-  });
-  const citations = Array.isArray(result.citations) ? result.citations : [];
-  const expected = new Set(item.relevantChunkIds);
-  const ranks = citations.map((citation) => citation.chunkId);
-  const matched = ranks.filter((id) => expected.has(id));
-  const human = item.humanReview ?? {};
-  results.push({
-    id: item.id,
-    answerable: item.answerable,
-    insufficientEvidence: result.insufficientEvidence === true,
-    recallAt5: expected.size ? new Set(matched).size / expected.size : null,
-    reciprocalRank: expected.size
-      ? ranks.findIndex((id) => expected.has(id)) < 0
-        ? 0
-        : 1 / (ranks.findIndex((id) => expected.has(id)) + 1)
-      : null,
-    citationFieldCompleteness: citations.length
-      ? citations.filter(
-          (citation) =>
-            typeof citation.documentId === "string" &&
-            typeof citation.chunkId === "string" &&
-            typeof citation.fileName === "string" &&
-            typeof citation.snippet === "string",
-        ).length / citations.length
-      : null,
-    latencyMs: Math.round(latencyMs),
-    retrievalMs: Number.isFinite(result.retrievalMs)
-      ? result.retrievalMs
-      : null,
-    groundedness: human.groundedness ?? null,
-    usefulness: human.usefulness ?? null,
+
+  const average = (key) => {
+    const values = results
+      .map((row) => row[key])
+      .filter((value) => value !== null);
+    return values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : null;
+  };
+  const evidenceAccuracy =
+    results.filter((row) => row.insufficientEvidence === !row.answerable).length /
+    results.length;
+  reports.push({
+    mode: endpoint.mode,
+    recallAt5: average("recallAt5"),
+    mrr: average("reciprocalRank"),
+    citationFieldCompleteness: average("citationFieldCompleteness"),
+    evidenceClassificationAccuracy: evidenceAccuracy,
+    meanEndToEndLatencyMs: average("latencyMs"),
+    meanRetrievalLatencyMs: average("retrievalMs"),
+    meanHumanGroundedness: average("groundedness"),
+    meanHumanUsefulness: average("usefulness"),
+    providerCost: null,
+    rows: results,
   });
 }
 
-const average = (key) => {
-  const values = results
-    .map((row) => row[key])
-    .filter((value) => value !== null);
-  return values.length
-    ? values.reduce((sum, value) => sum + value, 0) / values.length
-    : null;
-};
-const evidenceAccuracy =
-  results.filter((row) => row.insufficientEvidence === !row.answerable).length /
-  results.length;
 if (reviewSheetPath) {
   await writeFile(
     reviewSheetPath,
-    reviewSheet.map((row) => JSON.stringify(row)).join("\n") + "\n",
+    reviewRows.map((row) => JSON.stringify(row)).join("\n") + "\n",
+  );
+}
+
+let comparison = null;
+if (reports.length === 2) {
+  const baseline = reports.find((report) => report.mode === "baseline");
+  const crag = reports.find((report) => report.mode === "crag");
+  const metrics = [
+    "recallAt5",
+    "mrr",
+    "citationFieldCompleteness",
+    "evidenceClassificationAccuracy",
+    "meanEndToEndLatencyMs",
+    "meanRetrievalLatencyMs",
+    "meanHumanGroundedness",
+    "meanHumanUsefulness",
+  ];
+  comparison = Object.fromEntries(
+    metrics.map((metric) => [
+      metric,
+      baseline?.[metric] == null || crag?.[metric] == null
+        ? null
+        : crag[metric] - baseline[metric],
+    ]),
   );
 }
 console.log(
@@ -133,18 +183,9 @@ console.log(
       datasetSha256,
       modelVersion,
       configVersion,
-      cases: results.length,
-      recallAt5: average("recallAt5"),
-      mrr: average("reciprocalRank"),
-      citationFieldCompleteness: average("citationFieldCompleteness"),
-      evidenceClassificationAccuracy: evidenceAccuracy,
-      meanEndToEndLatencyMs: average("latencyMs"),
-      meanRetrievalLatencyMs: average("retrievalMs"),
-      meanHumanGroundedness: average("groundedness"),
-      meanHumanUsefulness: average("usefulness"),
-      providerCost: null,
-      note: "Questions and answers are not written to the report. Enter human review scores in the versioned dataset; provider cost is unavailable through the MVP API.",
-      rows: results,
+      cases: cases.length,
+      ...(reports.length === 1 ? reports[0] : { reports, comparison }),
+      note: "Rows contain no question or answer text. Human review scores are null until reviewed. Provider cost is unavailable through the MVP API.",
     },
     null,
     2,

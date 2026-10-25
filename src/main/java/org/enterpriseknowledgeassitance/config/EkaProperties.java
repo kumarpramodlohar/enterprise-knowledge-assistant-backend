@@ -5,6 +5,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
@@ -18,6 +19,7 @@ public record EkaProperties(
         @Valid @NotNull Upload upload,
         @Valid @NotNull Chunking chunking,
         @Valid @NotNull Retrieval retrieval,
+        @Valid @NotNull Crag crag,
         @Valid @NotNull Ingestion ingestion,
         @Valid @NotNull Ai ai,
         @Valid @NotNull Retention retention,
@@ -44,6 +46,17 @@ public record EkaProperties(
             @Min(1) int contextTokenBudget,
             @Min(1) int diagnosticCandidateCount,
             @DecimalMin("0.0") @DecimalMax("1.0") double similarityThreshold) {}
+
+    public record Crag(
+            boolean enabled,
+            @Min(1) @Max(5) int maxEvaluatedPassages,
+            @Min(0) @Max(1) int maxRewrites,
+            @NotNull Duration timeout) {
+        @AssertTrue(message = "CRAG timeout must be positive")
+        public boolean isTimeoutPositive() {
+            return timeout != null && !timeout.isNegative() && !timeout.isZero();
+        }
+    }
 
     public record Ingestion(
             @Min(1) int concurrency,

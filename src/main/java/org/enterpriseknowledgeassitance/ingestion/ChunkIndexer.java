@@ -120,6 +120,17 @@ public class ChunkIndexer {
 
     public List<SearchHit> search(String query, Collection<UUID> collectionIds, int topK, double minSimilarity,
             SearchFilter filter) throws EmbeddingFailedException {
+        return searchInternal(query, collectionIds, topK, minSimilarity, filter, false);
+    }
+
+    /** Returns the authorized nearest candidates before the evidence threshold for CRAG evaluation. */
+    public List<SearchHit> searchCandidates(String query, Collection<UUID> collectionIds, int topK,
+            double thresholdForDiagnostics, SearchFilter filter) throws EmbeddingFailedException {
+        return searchInternal(query, collectionIds, topK, thresholdForDiagnostics, filter, true);
+    }
+
+    private List<SearchHit> searchInternal(String query, Collection<UUID> collectionIds, int topK,
+            double minSimilarity, SearchFilter filter, boolean includeBelowThreshold) throws EmbeddingFailedException {
         if (collectionIds.isEmpty() || topK < 1) {
             return List.of();
         }
@@ -147,7 +158,8 @@ public class ChunkIndexer {
                     candidate.pageNumber(), candidate.score(), candidate.score() >= minSimilarity);
         }
         // Preserve the previous behavior: threshold applies only to the original top-K window.
-        return candidates.stream().limit(topK).filter(h -> h.score() >= minSimilarity).toList();
+        return candidates.stream().limit(topK)
+                .filter(h -> includeBelowThreshold || h.score() >= minSimilarity).toList();
     }
 
     private boolean hasEligibleChunks(Collection<UUID> collectionIds, SearchFilter filter) {

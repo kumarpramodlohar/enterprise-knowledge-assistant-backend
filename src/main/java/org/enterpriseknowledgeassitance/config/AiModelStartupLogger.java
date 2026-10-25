@@ -14,15 +14,23 @@ class AiModelStartupLogger {
     private static final Logger log = LoggerFactory.getLogger(AiModelStartupLogger.class);
 
     private final EkaProperties properties;
+    private final WebSearchProperties webSearchProperties;
     private final Environment environment;
 
-    AiModelStartupLogger(EkaProperties properties, Environment environment) {
+    AiModelStartupLogger(EkaProperties properties, WebSearchProperties webSearchProperties, Environment environment) {
         this.properties = properties;
+        this.webSearchProperties = webSearchProperties;
         this.environment = environment;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     void logConfiguredModels() {
+        if (webSearchProperties.enabled()) {
+            log.info("Web search configuration: EKA_CRAG_ENABLED={}, EKA_WEB_SEARCH_ENABLED={}, "
+                            + "EKA_WEB_SEARCH_TIMEOUT={}",
+                    properties.crag().enabled(), webSearchProperties.enabled(), webSearchProperties.timeout());
+        }
+
         EkaProperties.Ai ai = properties.ai();
         log.info("AI configuration: chat provider={}, chat model={}, embedding provider={}, embedding model={}, "
                         + "embedding dimensions={}, vector table={}",

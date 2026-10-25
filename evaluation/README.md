@@ -17,3 +17,5 @@ node evaluation/evaluate.mjs
 ```
 
 The runner uses `/api/v1/chat/query`, aborts on API failures, and does not print question or answer text. Evaluation targets in the specification remain proposals and are not release gates. T18 remains incomplete until a representative labelled dataset, human review, adversarial checks, and a reproducible run/report are supplied.
+
+For a paired baseline/CRAG comparison, run two backend instances against the same database and corpus: leave `EKA_CRAG_ENABLED=false` on the baseline instance and set it to `true` on the CRAG instance. Set `EKA_API_BASE_URL` to the baseline URL and `EKA_EVAL_CRAG_BASE_URL` to the CRAG URL, then run the same command. The report contains both metric sets and CRAG-minus-baseline deltas. Human review is still required before drawing quality conclusions.

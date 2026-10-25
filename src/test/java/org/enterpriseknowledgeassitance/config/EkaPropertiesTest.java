@@ -22,6 +22,8 @@ class EkaPropertiesTest {
         "eka.chunking.size-tokens=800", "eka.chunking.overlap-tokens=100",
         "eka.retrieval.top-k=5", "eka.retrieval.context-token-budget=4000",
         "eka.retrieval.diagnostic-candidate-count=10", "eka.retrieval.similarity-threshold=0.70",
+        "eka.crag.enabled=false", "eka.crag.max-evaluated-passages=5", "eka.crag.max-rewrites=1",
+        "eka.crag.timeout=60s",
         "eka.ingestion.concurrency=2", "eka.ingestion.provider-timeout=60s", "eka.ingestion.max-retries=3",
         "eka.ingestion.poll-interval=2s", "eka.ingestion.retry-backoff=5s", "eka.ingestion.stale-after=15m",
         "eka.ingestion.worker-enabled=false", "eka.retention.purge-interval=1h", "eka.retention.purge-batch-size=50",
@@ -60,6 +62,17 @@ class EkaPropertiesTest {
         for (int i = 0; i < bad.length; i++) {
             if (bad[i].startsWith("eka.retrieval.diagnostic-candidate-count")) {
                 bad[i] = "eka.retrieval.diagnostic-candidate-count=0";
+            }
+        }
+        runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
+    }
+
+    @Test
+    void failsWhenCragBoundsExceedApprovedMaximum() {
+        String[] bad = VALID.clone();
+        for (int i = 0; i < bad.length; i++) {
+            if (bad[i].startsWith("eka.crag.max-evaluated-passages")) {
+                bad[i] = "eka.crag.max-evaluated-passages=6";
             }
         }
         runner.withPropertyValues(bad).run(ctx -> assertThat(ctx).hasFailed());
