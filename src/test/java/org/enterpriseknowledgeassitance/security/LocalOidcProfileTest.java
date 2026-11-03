@@ -20,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /** Keycloak sign-in combined with the local (Ollama) profile. */
 @SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "EKA_LOCAL_USER_PASSWORD=pw",
-        "EKA_OIDC_ISSUER_URI=http://localhost:9/realms/eka"})
+        "EKA_OIDC_ISSUER_URI=http://localhost:9/realms/eka", "EKA_OIDC_AUDIENCE=eka-api"})
 @ActiveProfiles({"local", "oidc"})
 @AutoConfigureMockMvc
 @Import(PostgresTestSupport.class)

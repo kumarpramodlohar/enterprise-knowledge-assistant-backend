@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
 @SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "EKA_LOCAL_USER_PASSWORD=pw",
-        "eka.extraction.max-characters=1000"})
+        "eka.extraction.max-characters=1000", "eka.extraction.max-pages=500"})
 @AutoConfigureMockMvc
 @Import(PostgresTestSupport.class)
 class DocumentUploadIntegrationTest {

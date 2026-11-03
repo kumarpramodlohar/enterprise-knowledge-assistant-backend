@@ -4,6 +4,12 @@ import org.enterpriseknowledgeassitance.web.ErrorCodes;
 import jakarta.servlet.http.HttpServletResponse;
 import org.enterpriseknowledgeassitance.web.CorrelationIdFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -26,6 +32,20 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 @Configuration
 @EnableConfigurationProperties(LocalAuthProperties.class)
 class SecurityConfig {
+
+    @Bean
+    @Profile("!local | oidc")
+    JwtDecoder oidcJwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
+            @Value("${EKA_OIDC_AUDIENCE}") String expectedAudience) {
+        return new SupplierJwtDecoder(() -> {
+            var decoder = NimbusJwtDecoder.withIssuerLocation(issuerUri).build();
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    JwtValidators.createDefaultWithIssuer(issuerUri),
+                    new OidcAudienceValidator(expectedAudience)));
+            return decoder;
+        });
+    }
 
     @Bean
     FilterRegistrationBean<OidcUserProvisioningFilter> oidcProvisioningFilterRegistration(

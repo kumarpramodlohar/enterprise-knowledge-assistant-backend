@@ -19,7 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 @SpringBootTest(properties = {"EKA_DB_PASSWORD=unused", "OPENAI_API_KEY=unused",
-        "EKA_OIDC_ISSUER_URI=http://localhost:9/realms/eka"})
+        "EKA_OIDC_ISSUER_URI=http://localhost:9/realms/eka", "EKA_OIDC_AUDIENCE=eka-api"})
 @ActiveProfiles("deployed")
 @AutoConfigureMockMvc
 @Import(PostgresTestSupport.class)
