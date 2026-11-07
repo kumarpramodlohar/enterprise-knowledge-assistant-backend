@@ -13,8 +13,11 @@ import org.enterpriseknowledgeassitance.api.DocumentResponse;
 import org.enterpriseknowledgeassitance.api.DocumentStatus;
 import org.enterpriseknowledgeassitance.config.EkaProperties;
 import org.enterpriseknowledgeassitance.security.AccessService;
+import org.enterpriseknowledgeassitance.web.ApiException;
+import org.enterpriseknowledgeassitance.web.ErrorCodes;
 import org.enterpriseknowledgeassitance.web.NotFoundException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -31,7 +34,8 @@ public class DocumentService {
               AND (CAST(:collection AS uuid) IS NULL OR collection_id = :collection)
               AND (CAST(:status AS text) IS NULL OR status = :status)
               AND (CAST(:dtype AS text) IS NULL OR document_type = :dtype)
-              AND (CAST(:tag AS text) IS NULL OR :tag = ANY (tags))""";
+              AND (CAST(:tag AS text) IS NULL OR :tag = ANY (tags))
+              AND (CAST(:search AS text) IS NULL OR file_name ILIKE :search ESCAPE '!')""";
 
     private static final String LIST = "SELECT " + COLUMNS + " FROM documents WHERE " + VISIBLE
             + " ORDER BY created_at DESC, id LIMIT :size OFFSET :offset";
@@ -48,7 +52,9 @@ public class DocumentService {
             UPDATE documents
             SET status = 'DELETED', deleted_at = now(), deleted_by = :by, updated_at = now(),
                 purge_after = now() + make_interval(days => :days)
-            WHERE id = :d AND deleted_at IS NULL""";
+            WHERE id = :d AND deleted_at IS NULL AND status NOT IN ('QUEUED', 'PROCESSING')""";
+
+    private static final String STATUS = "SELECT status FROM documents WHERE id = :d AND deleted_at IS NULL";
 
     private static final String CANCEL_JOBS = """
             UPDATE ingestion_jobs SET status = 'FAILED', last_error = 'DOCUMENT_DELETED', updated_at = now()
@@ -78,10 +84,12 @@ public class DocumentService {
         }
         var list = jdbc.sql(LIST).param("size", size).param("offset", (long) page * size);
         var count = jdbc.sql(COUNT);
+        String search = searchPattern(q.search());
         for (var spec : List.of(list, count)) {
             spec.param("cols", readable).param("collection", q.collectionId(), Types.OTHER)
                     .param("status", q.status() == null ? null : q.status().name(), Types.VARCHAR)
-                    .param("dtype", q.documentType(), Types.VARCHAR).param("tag", q.tag(), Types.VARCHAR);
+                    .param("dtype", q.documentType(), Types.VARCHAR).param("tag", q.tag(), Types.VARCHAR)
+                    .param("search", search, Types.VARCHAR);
         }
         List<DocumentResponse> items = list.query(DocumentService::map).list();
         long total = count.query(Long.class).single();
@@ -93,16 +101,17 @@ public class DocumentService {
         return jdbc.sql(GET).param("d", id).query(DocumentService::map).optional().orElseThrow(NotFoundException::new);
     }
 
-    /** Idempotent: documents already queued or processing are returned unchanged. */
+    /** Re-index is available only after the current ingestion has finished. */
     public DocumentResponse reindex(String subject, UUID id) {
         UUID collectionId = access.requireReadableDocument(subject, id);
         access.requireManage(subject, collectionId);
         tx.executeWithoutResult(s -> {
-            if (jdbc.sql(REQUEUE).param("d", id).update() == 1) {
-                jdbc.sql("INSERT INTO ingestion_jobs (document_id, status) VALUES (:d, 'QUEUED')").param("d", id)
-                        .update();
-                audit.record(id, collectionId, "REINDEX", "SUCCESS", subject);
+            if (jdbc.sql(REQUEUE).param("d", id).update() != 1) {
+                requireNotBusyOrNotFound(id);
             }
+            jdbc.sql("INSERT INTO ingestion_jobs (document_id, status) VALUES (:d, 'QUEUED')").param("d", id)
+                    .update();
+            audit.record(id, collectionId, "REINDEX", "SUCCESS", subject);
         });
         return get(subject, id);
     }
@@ -113,11 +122,29 @@ public class DocumentService {
         access.requireManage(subject, collectionId);
         tx.executeWithoutResult(s -> {
             if (jdbc.sql(SOFT_DELETE).param("by", subject).param("days", purgeAfterDays).param("d", id).update() == 0) {
-                throw new NotFoundException();
+                requireNotBusyOrNotFound(id);
             }
             jdbc.sql(CANCEL_JOBS).param("d", id).update();
             audit.record(id, collectionId, "DELETE", "SUCCESS", subject);
         });
+    }
+
+    private void requireNotBusyOrNotFound(UUID id) {
+        String status = jdbc.sql(STATUS).param("d", id).query(String.class).optional()
+                .orElseThrow(NotFoundException::new);
+        if ("QUEUED".equals(status) || "PROCESSING".equals(status)) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOCUMENT_BUSY,
+                    "Document ingestion is still in progress");
+        }
+        throw new NotFoundException();
+    }
+
+    private static String searchPattern(String search) {
+        if (search == null || search.isBlank()) {
+            return null;
+        }
+        String escaped = search.trim().replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        return "%" + escaped + "%";
     }
 
     private static DocumentResponse map(ResultSet rs, int n) throws SQLException {

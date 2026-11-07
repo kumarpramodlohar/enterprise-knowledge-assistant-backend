@@ -110,6 +110,13 @@ class DocumentManagementIntegrationTest {
                 .andExpect(jsonPath("$.totalItems").value(0));
         call(auth(get("/api/v1/documents").param("status", "FAILED"))).andExpect(jsonPath("$.totalItems").value(0));
         call(auth(get("/api/v1/documents").param("status", "INDEXED"))).andExpect(jsonPath("$.totalItems").value(2));
+        call(auth(get("/api/v1/documents").param("search", "M.TXT"))).andExpect(jsonPath("$.totalItems").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(docM.toString()));
+        call(auth(get("/api/v1/documents").param("search", ".txt").param("collectionId", readOnly.toString())
+                .param("status", "INDEXED"))).andExpect(jsonPath("$.totalItems").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(docR.toString()));
+        call(auth(get("/api/v1/documents").param("search", "%"))).andExpect(jsonPath("$.totalItems").value(0));
+        call(auth(get("/api/v1/documents").param("search", "   "))).andExpect(jsonPath("$.totalItems").value(2));
     }
 
     @Test
@@ -117,6 +124,7 @@ class DocumentManagementIntegrationTest {
         call(auth(get("/api/v1/documents").param("size", "101"))).andExpect(status().isBadRequest());
         call(auth(get("/api/v1/documents").param("size", "0"))).andExpect(status().isBadRequest());
         call(auth(get("/api/v1/documents").param("page", "-1"))).andExpect(status().isBadRequest());
+        call(auth(get("/api/v1/documents").param("search", "x".repeat(201)))).andExpect(status().isBadRequest());
         call(auth(get("/api/v1/documents").param("status", "BOGUS"))).andExpect(status().isBadRequest());
         call(get("/api/v1/documents")).andExpect(status().isUnauthorized());
     }
@@ -142,17 +150,28 @@ class DocumentManagementIntegrationTest {
     }
 
     @Test
-    void reindexQueuesOnceIsIdempotentAndKeepsOldChunksUntilReplaced() throws Exception {
+    void reindexQueuesOnceAndRejectsDuplicateRequestWhileQueued() throws Exception {
         long chunksBefore = count("SELECT count(*) FROM document_chunks WHERE document_id = :d", docM);
         call(auth(post("/api/v1/documents/" + docM + "/reindex"))).andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("QUEUED"));
-        call(auth(post("/api/v1/documents/" + docM + "/reindex"))).andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("QUEUED"));
+        call(auth(post("/api/v1/documents/" + docM + "/reindex"))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_BUSY"));
         assertThat(count("SELECT count(*) FROM ingestion_jobs WHERE document_id = :d AND status = 'QUEUED'", docM))
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM document_audit WHERE document_id = :d AND action = 'REINDEX'", docM))
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM document_chunks WHERE document_id = :d", docM)).isEqualTo(chunksBefore);
+    }
+
+    @Test
+    void reindexRejectsDocumentWhileProcessing() throws Exception {
+        jdbc.sql("UPDATE documents SET status = 'PROCESSING' WHERE id = :d").param("d", docM).update();
+        call(auth(post("/api/v1/documents/" + docM + "/reindex"))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_BUSY"));
+        assertThat(count("SELECT count(*) FROM ingestion_jobs WHERE document_id = :d AND status = 'QUEUED'", docM))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM document_audit WHERE document_id = :d AND action = 'REINDEX'", docM))
+                .isZero();
     }
 
     @Test
@@ -197,12 +216,22 @@ class DocumentManagementIntegrationTest {
     }
 
     @Test
-    void deleteCancelsPendingJobsAndAllowsReuploadOfSameContent() throws Exception {
-        jdbc.sql("UPDATE documents SET status = 'QUEUED' WHERE id = :d").param("d", docM).update();
-        jdbc.sql("INSERT INTO ingestion_jobs (document_id, status) VALUES (:d, 'QUEUED')").param("d", docM).update();
-        call(auth(delete("/api/v1/documents/" + docM))).andExpect(status().isNoContent());
-        assertThat(count("SELECT count(*) FROM ingestion_jobs WHERE document_id = :d AND status = 'QUEUED'", docM))
-                .isZero();
+    void deleteRejectsQueuedOrProcessingDocumentsWithoutChangingStateOrAudit() throws Exception {
+        for (String busyStatus : List.of("QUEUED", "PROCESSING")) {
+            jdbc.sql("UPDATE documents SET status = :s WHERE id = :d").param("s", busyStatus).param("d", docM).update();
+            jdbc.sql("INSERT INTO ingestion_jobs (document_id, status) VALUES (:d, :s)")
+                    .param("d", docM).param("s", busyStatus.equals("QUEUED") ? "QUEUED" : "RUNNING").update();
+            long auditsBefore = count("SELECT count(*) FROM document_audit WHERE document_id = :d", docM);
+
+            call(auth(delete("/api/v1/documents/" + docM))).andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("DOCUMENT_BUSY"));
+            assertThat(jdbc.sql("SELECT status FROM documents WHERE id = :d").param("d", docM)
+                    .query(String.class).single()).isEqualTo(busyStatus);
+            assertThat(count("SELECT count(*) FROM document_audit WHERE document_id = :d", docM))
+                    .isEqualTo(auditsBefore);
+
+            jdbc.sql("DELETE FROM ingestion_jobs WHERE document_id = :d").param("d", docM).update();
+        }
     }
 
     @Test

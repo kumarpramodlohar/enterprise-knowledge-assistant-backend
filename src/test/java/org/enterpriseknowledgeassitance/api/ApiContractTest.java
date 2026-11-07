@@ -67,11 +67,13 @@ class ApiContractTest {
 
     @Test
     void paginationBoundsAreEnforced() {
-        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, 0, 100))).isEmpty();
-        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, -1, 20))).isNotEmpty();
-        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, 0, 101))).isNotEmpty();
-        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, 0, 0))).isNotEmpty();
-        var defaults = new DocumentListQuery(null, null, null, null, null, null);
+        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, null, 0, 100))).isEmpty();
+        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, null, -1, 20))).isNotEmpty();
+        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, null, 0, 101))).isNotEmpty();
+        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, null, 0, 0))).isNotEmpty();
+        assertThat(validator.validate(new DocumentListQuery(null, null, null, null, "x".repeat(201), 0, 20)))
+                .isNotEmpty();
+        var defaults = new DocumentListQuery(null, null, null, null, null, null, null);
         assertThat(defaults.pageOrDefault()).isZero();
         assertThat(defaults.sizeOrDefault()).isEqualTo(20);
     }

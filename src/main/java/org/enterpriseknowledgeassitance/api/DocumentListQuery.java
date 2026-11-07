@@ -2,6 +2,7 @@ package org.enterpriseknowledgeassitance.api;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
 /** Query parameters for GET /api/v1/documents. Page size is bounded to protect the service. */
@@ -10,6 +11,7 @@ public record DocumentListQuery(
         DocumentStatus status,
         String documentType,
         String tag,
+        @Size(max = 200) String search,
         @Min(0) Integer page,
         @Min(1) @Max(MAX_SIZE) Integer size) {
 
