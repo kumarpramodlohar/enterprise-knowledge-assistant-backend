@@ -6,14 +6,14 @@ The implemented backend uses Spring AI with Ollama or OpenAI for chat and embedd
 
 ## Current implementation status
 
-| Area | Status |
-|---|---|
-| Upload and ingestion | Implemented: PDF, DOCX, TXT, and Markdown upload; extraction; durable queued jobs; chunking; embeddings; and vector indexing. |
-| Document management | Implemented: permission-scoped listing, status lookup, re-index, soft delete, and scheduled purge. |
-| Question answering | Implemented: collection-scoped cosine similarity retrieval, metadata filters, evidence-bounded prompting, abstention when no evidence is available, and citations built from trusted database metadata. |
-| Authentication and authorization | Implemented: local-profile HTTP Basic or OIDC JWT resource-server authentication, with database-backed roles and collection grants. |
-| Corrective RAG | Implemented but disabled by default: passage evaluation, one query rewrite/retrieval retry, evidence refinement, and optional consent-based Tavily search. |
-| Quality evaluation | A Node.js evaluation runner and unit/integration tests exist. No representative, human-labelled enterprise corpus or provider cost reporting is included. |
+| Area                             | Status                                                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload and ingestion             | Implemented: PDF, DOCX, TXT, and Markdown upload; extraction; durable queued jobs; chunking; embeddings; and vector indexing.                                                                                              |
+| Document management              | Implemented: permission-scoped listing, status lookup, re-index, soft delete, and scheduled purge.                                                                                                                         |
+| Question answering               | Implemented: collection-scoped cosine similarity retrieval, metadata filters, evidence-bounded prompting, abstention when no evidence is available, and citations built from trusted database metadata.                    |
+| Authentication and authorization | Implemented: local-profile HTTP Basic or OIDC JWT resource-server authentication. Database-backed roles and collection grants remain the default; an opt-in mTLS auth-service client is available for integration testing. |
+| Corrective RAG                   | Implemented but disabled by default: passage evaluation, one query rewrite/retrieval retry, evidence refinement, and optional consent-based Tavily search.                                                                 |
+| Quality evaluation               | A Node.js evaluation runner and unit/integration tests exist. No representative, human-labelled enterprise corpus or provider cost reporting is included.                                                                  |
 
 This is not a claim of production readiness. There is no API for administrators to create users, collections, or grants; local setup uses SQL seed data. No explicit CORS configuration, chat history, blended keyword/vector search, reranker, or model usage/cost accounting was found. Retrieval and generated answers still require human verification.
 
@@ -29,18 +29,18 @@ This is not a claim of production readiness. There is no API for administrators 
 
 ## Technology stack
 
-| Component | Repository version / implementation |
-|---|---|
-| Language | Java 21 toolchain |
-| Framework | Spring Boot 4.1.1 |
-| Build | Gradle 9.7.1 wrapper |
-| AI integration | Spring AI 2.0.1; Ollama and OpenAI chat/embedding starters |
-| Persistence | PostgreSQL, Spring JDBC (`JdbcClient`), Flyway |
-| Vector search | pgvector; provider-specific vector tables with HNSW cosine indexes |
-| Document extraction | Apache PDFBox 3.0.8; Apache POI OOXML 5.5.1 |
-| Security | Spring Security HTTP Basic for local profile; OAuth2 Resource Server JWT for OIDC |
-| Tests | JUnit Platform, Spring Boot test support, Spring Security test, Testcontainers |
-| Optional web search | Tavily Search API |
+| Component           | Repository version / implementation                                               |
+| ------------------- | --------------------------------------------------------------------------------- |
+| Language            | Java 21 toolchain                                                                 |
+| Framework           | Spring Boot 4.1.1                                                                 |
+| Build               | Gradle 9.7.1 wrapper                                                              |
+| AI integration      | Spring AI 2.0.1; Ollama and OpenAI chat/embedding starters                        |
+| Persistence         | PostgreSQL, Spring JDBC (`JdbcClient`), Flyway                                    |
+| Vector search       | pgvector; provider-specific vector tables with HNSW cosine indexes                |
+| Document extraction | Apache PDFBox 3.0.8; Apache POI OOXML 5.5.1                                       |
+| Security            | Spring Security HTTP Basic for local profile; OAuth2 Resource Server JWT for OIDC |
+| Tests               | JUnit Platform, Spring Boot test support, Spring Security test, Testcontainers    |
+| Optional web search | Tavily Search API                                                                 |
 
 Chat and embedding providers are selected independently. Local defaults are Ollama for both; the `deployed` profile defaults to OpenAI for both.
 
@@ -84,10 +84,12 @@ The configured chunk “token” size and answer context budget use whitespace-s
 ├── build.gradle
 ├── compose.yaml
 ├── Dockerfile
-├── evaluation/
+├── eka_eval_suite/
 │   ├── evaluate.mjs
 │   ├── build-dataset.mjs
-│   └── README.md
+│   ├── lib/
+│   ├── datasets/
+│   └── test/
 ├── gradle/wrapper/
 ├── scripts/start-local.sh
 └── src/
@@ -119,36 +121,44 @@ The supplied Compose database uses `pgvector/pgvector:pg18`; Testcontainers test
 
 `application.properties` loads an optional root `.env` file and defaults to the `local` profile. The `.env` file is git-ignored; never commit real passwords or provider keys. `.env.example` lists the local variables used by the setup. The most relevant environment settings are:
 
-| Variable | Required? | Purpose and default |
-|---|---|---|
-| `EKA_DB_NAME` | Optional (Compose only) | Database name created by Compose; default `eka`. If changed, set `EKA_DB_URL` to use the same database. |
-| `EKA_DB_URL` | Optional | JDBC URL; default is `jdbc:postgresql://localhost:5433/eka` (the port follows `EKA_DB_PORT`). Set it explicitly if the database name/host differs from this default. |
-| `EKA_DB_PORT` | Optional | Host port for the Compose database; default `5433`. |
-| `EKA_DB_USER` | Optional | PostgreSQL user; default `postgres`. Compose uses it as the initial database user too. |
-| `EKA_DB_MIGRATION_USER` | Optional | Flyway migration user; defaults to `EKA_DB_USER` (then `postgres`). |
-| `POSTGRES_PASSWORD` | Required by Compose | Password for the PostgreSQL user. Use a local secret, not the example value. |
-| `EKA_CHAT_PROVIDER`, `EKA_EMBEDDING_PROVIDER` | Optional | Select `ollama` or `openai` independently; both default to `ollama`. |
-| `EKA_CHAT_MODEL`, `EKA_EMBEDDING_MODEL` | Optional | Default `llama3.2:latest` and `nomic-embed-text` for Ollama. In the deployed profile defaults are `gpt-4o-mini` and `text-embedding-3-small`. |
-| `EKA_EMBEDDING_DIMENSIONS`, `EKA_VECTOR_TABLE` | Optional, must match | Default `768` and `vector_store_ollama`; OpenAI's configured table requires `1536` and `vector_store_openai`. Startup validation rejects unsupported pairings. |
-| `OLLAMA_BASE_URL` | Optional | Ollama endpoint; default `http://localhost:11434`. |
-| `OPENAI_API_KEY` | Required if OpenAI selected | Server-side OpenAI credential. It is not required for Ollama-only operation. |
-| `EKA_LOCAL_USER`, `EKA_LOCAL_USER_PASSWORD` | Required for usable local Basic login | Local-profile in-memory HTTP Basic credentials. The example uses `dev`; replace its example password. The matching database subject and collection grant must also be seeded. |
-| `SPRING_PROFILES_ACTIVE` | Optional | Choose profile(s), e.g. `local,oidc` or `deployed`. The default is `local`; `local` and `deployed` cannot be active together. |
-| `SERVER_PORT` | Optional | Spring Boot server port; default `8080`. |
-| `EKA_OIDC_ISSUER_URI` | Required for OIDC | JWT issuer URI. `application-oidc.properties` supplies a localhost Keycloak example default, but a real issuer must be reachable and match the token issuer. |
-| `EKA_OIDC_AUDIENCE` | Required for OIDC | Expected API audience; every accepted access token must contain this value in `aud`. Configure the Keycloak client/audience mapper to issue it. |
-| `EKA_RETRIEVAL_TOP_K` | Optional | Retrieval count; default `10`. |
-| `EKA_RETRIEVAL_SIMILARITY_THRESHOLD` | Optional | Minimum cosine-similarity score in the normal retrieval path; default `0.30`. |
-| `EKA_RETRIEVAL_DIAGNOSTIC_CANDIDATE_COUNT` | Optional | Candidate count logged for retrieval diagnostics; default `10`. |
-| `EKA_CRAG_ENABLED` | Optional | Enables corrective retrieval evaluation/refinement; default `false`. |
-| `EKA_WEB_SEARCH_ENABLED`, `TAVILY_API_KEY` | Optional | Enable server-side Tavily search and configure its key. Search still requires `allowExternalSearch: true` on the individual chat request. |
-| `EKA_WEB_SEARCH_TIMEOUT` | Optional | Tavily timeout; default `8s`. |
-| `EKA_WORKER_ENABLED` | Optional | Enable ingestion worker; default `true`. |
-| `EKA_PURGE_ENABLED` | Optional | Enable soft-delete purge scheduler; default `true`. |
+| Variable                                                         | Required?                             | Purpose and default                                                                                                                                                                            |
+| ---------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EKA_DB_NAME`                                                    | Optional (Compose only)               | Database name created by Compose; default `eka`. If changed, set `EKA_DB_URL` to use the same database.                                                                                        |
+| `EKA_DB_URL`                                                     | Optional                              | JDBC URL; default is `jdbc:postgresql://localhost:5433/eka` (the port follows `EKA_DB_PORT`). Set it explicitly if the database name/host differs from this default.                           |
+| `EKA_DB_PORT`                                                    | Optional                              | Host port for the Compose database; default `5433`.                                                                                                                                            |
+| `EKA_DB_USER`                                                    | Optional                              | PostgreSQL user; default `postgres`. Compose uses it as the initial database user too.                                                                                                         |
+| `EKA_DB_MIGRATION_USER`                                          | Optional                              | Flyway migration user; defaults to `EKA_DB_USER` (then `postgres`).                                                                                                                            |
+| `POSTGRES_PASSWORD`                                              | Required by Compose                   | Password for the PostgreSQL user. Use a local secret, not the example value.                                                                                                                   |
+| `EKA_CHAT_PROVIDER`, `EKA_EMBEDDING_PROVIDER`                    | Optional                              | Select `ollama` or `openai` independently; both default to `ollama`.                                                                                                                           |
+| `EKA_CHAT_MODEL`, `EKA_EMBEDDING_MODEL`                          | Optional                              | Default `llama3.2:latest` and `nomic-embed-text` for Ollama. In the deployed profile defaults are `gpt-4o-mini` and `text-embedding-3-small`.                                                  |
+| `EKA_EMBEDDING_DIMENSIONS`, `EKA_VECTOR_TABLE`                   | Optional, must match                  | Default `768` and `vector_store_ollama`; OpenAI's configured table requires `1536` and `vector_store_openai`. Startup validation rejects unsupported pairings.                                 |
+| `OLLAMA_BASE_URL`                                                | Optional                              | Ollama endpoint; default `http://localhost:11434`.                                                                                                                                             |
+| `OPENAI_API_KEY`                                                 | Required if OpenAI selected           | Server-side OpenAI credential. It is not required for Ollama-only operation.                                                                                                                   |
+| `EKA_LOCAL_USER`, `EKA_LOCAL_USER_PASSWORD`                      | Required for usable local Basic login | Local-profile in-memory HTTP Basic credentials. The example uses `dev`; replace its example password. The matching database subject and collection grant must also be seeded.                  |
+| `SPRING_PROFILES_ACTIVE`                                         | Optional                              | Choose profile(s), e.g. `local,oidc` or `deployed`. The default is `local`; `local` and `deployed` cannot be active together.                                                                  |
+| `SERVER_PORT`                                                    | Optional                              | Spring Boot server port; default `8080`.                                                                                                                                                       |
+| `EKA_OIDC_ISSUER_URI`                                            | Required for OIDC                     | JWT issuer URI. `application-oidc.properties` supplies a localhost Keycloak example default, but a real issuer must be reachable and match the token issuer.                                   |
+| `EKA_OIDC_AUDIENCE`                                              | Required for OIDC                     | Expected API audience; every accepted access token must contain this value in `aud`. Configure the Keycloak client/audience mapper to issue it.                                                |
+| `EKA_AUTH_SERVICE_ENABLED`                                       | Optional; default `false`             | Enables the internal auth-service client. Do not enable for production or cutover until A05 migration/parity gates and A08 verification are complete. It is rejected with the `local` profile. |
+| `EKA_AUTH_SERVICE_BASE_URI`                                      | Required when enabled                 | HTTPS base URI for the Go auth service. The service must allow this backend's mTLS URI SAN.                                                                                                    |
+| `EKA_AUTH_CLIENT_KEYSTORE`, `EKA_AUTH_CLIENT_KEYSTORE_PASSWORD`  | Required when enabled                 | Path and secret password for the backend's PKCS#12 client certificate. Supply the password through a secret manager, not a committed environment file.                                         |
+| `EKA_AUTH_TRUSTED_CA_CERT`                                       | Required when enabled                 | PEM trust bundle used to validate the auth-service certificate; normal hostname verification remains enabled.                                                                                  |
+| `EKA_AUTH_LOCAL_NAMESPACE`                                       | Optional                              | Namespace for typed local identities. The local Basic profile cannot be combined with auth-service mode.                                                                                       |
+| `EKA_AUTH_TIMEOUT`, `EKA_AUTH_PAGE_SIZE`, `EKA_AUTH_SCOPE_LIMIT` | Optional when enabled                 | Per-request timeout (maximum `2s`), page size (`1`–`500`, default `100`), and maximum accumulated scopes (default `10000`).                                                                    |
+| `EKA_RETRIEVAL_TOP_K`                                            | Optional                              | Retrieval count; default `10`.                                                                                                                                                                 |
+| `EKA_RETRIEVAL_SIMILARITY_THRESHOLD`                             | Optional                              | Minimum cosine-similarity score in the normal retrieval path; default `0.30`.                                                                                                                  |
+| `EKA_RETRIEVAL_DIAGNOSTIC_CANDIDATE_COUNT`                       | Optional                              | Candidate count logged for retrieval diagnostics; default `10`.                                                                                                                                |
+| `EKA_CRAG_ENABLED`                                               | Optional                              | Enables corrective retrieval evaluation/refinement; default `false`.                                                                                                                           |
+| `EKA_WEB_SEARCH_ENABLED`, `TAVILY_API_KEY`                       | Optional                              | Enable server-side Tavily search and configure its key. Search still requires `allowExternalSearch: true` on the individual chat request.                                                      |
+| `EKA_WEB_SEARCH_TIMEOUT`                                         | Optional                              | Tavily timeout; default `8s`.                                                                                                                                                                  |
+| `EKA_WORKER_ENABLED`                                             | Optional                              | Enable ingestion worker; default `true`.                                                                                                                                                       |
+| `EKA_PURGE_ENABLED`                                              | Optional                              | Enable soft-delete purge scheduler; default `true`.                                                                                                                                            |
 
 Other important defaults configured in `application.properties` include a 10 MiB upload cap, extensions `pdf,docx,txt,md`, 800/100 chunk size/overlap, 4,000-word approximate answer context budget, 12,000,000 extracted characters, 1,000 PDF pages, and seven-day soft-delete retention. These are Spring properties under the `eka.*` prefix and can be overridden with Spring's standard property sources.
 
 The `deployed` profile selects OpenAI and requires `OPENAI_API_KEY`, `EKA_OIDC_ISSUER_URI`, and `EKA_OIDC_AUDIENCE`. Do not use the local Basic profile or development credentials in a shared or deployed environment.
+
+The auth-service integration is disabled by default and is not a production migration or cutover. It sends authenticated typed identities over HTTPS/mTLS and fails closed on service, protocol, or scope-consistency errors. Java continues to validate JWTs and perform resource-existence checks; legacy JDBC authorization remains active while the feature flag is off. Do not enable the flag until the approved migration, trusted identity mapping, policy-parity verification, and cross-service acceptance gates are complete.
 
 ## Local setup
 
@@ -213,18 +223,18 @@ To use Keycloak locally instead of Basic authentication, run with `SPRING_PROFIL
 
 All application endpoints require authentication. The only public endpoint is `GET /actuator/health` (including health probe paths). Use HTTP Basic with the `local` profile or `Authorization: Bearer <JWT>` with an OIDC profile.
 
-| Method and path | Purpose | Successful response |
-|---|---|---|
-| `POST /api/v1/documents` | Multipart upload; requires collection `MANAGE` | `202 Accepted`, `UploadAcceptedResponse` |
-| `GET /api/v1/documents` | List readable documents with filters and pagination | `200 OK`, `DocumentPage` |
-| `GET /api/v1/documents/{id}` | Read document status/metadata | `200 OK`, `DocumentResponse` |
-| `POST /api/v1/documents/{id}/reindex` | Queue an indexed or failed document again; requires `MANAGE` | `202 Accepted`, `DocumentResponse` |
-| `DELETE /api/v1/documents/{id}` | Soft-delete document; requires `MANAGE` | `204 No Content` |
-| `POST /api/v1/chat/query` | Ask a question against readable collections | `200 OK`, `ChatQueryResponse` |
-| `GET /api/v1/me` | Return subject, database role, readable and manageable collection IDs | `200 OK` |
-| `GET /actuator/health` | Health endpoint | `200 OK` when healthy |
+| Method and path                       | Purpose                                                               | Successful response                      |
+| ------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------- |
+| `POST /api/v1/documents`              | Multipart upload; requires collection `MANAGE`                        | `202 Accepted`, `UploadAcceptedResponse` |
+| `GET /api/v1/documents`               | List readable documents with filters and pagination                   | `200 OK`, `DocumentPage`                 |
+| `GET /api/v1/documents/{id}`          | Read document status/metadata                                         | `200 OK`, `DocumentResponse`             |
+| `POST /api/v1/documents/{id}/reindex` | Queue an indexed or failed document again; requires `MANAGE`          | `202 Accepted`, `DocumentResponse`       |
+| `DELETE /api/v1/documents/{id}`       | Soft-delete document; requires `MANAGE`                               | `204 No Content`                         |
+| `POST /api/v1/chat/query`             | Ask a question against readable collections                           | `200 OK`, `ChatQueryResponse`            |
+| `GET /api/v1/me`                      | Return subject, database role, readable and manageable collection IDs | `200 OK`                                 |
+| `GET /actuator/health`                | Health endpoint                                                       | `200 OK` when healthy                    |
 
-Inaccessible or deleted collections/documents are hidden as `404`. Authentication failures return `401`; authorization failures from the security filter chain return `403`. API errors use `{ "code", "message", "correlationId" }`; validation errors are `400`. Upload errors include `413` for size/content limits, `415` for unsupported types, `422` for unreadable files, and `409` for duplicate content.
+Inaccessible or deleted collections/documents are hidden as `404`. Authentication failures return `401`; authorization failures from the security filter chain return `403`. An unavailable enabled auth service returns a correlated safe `503` with code `AUTHORIZATION_SERVICE_UNAVAILABLE`. API errors use `{ "code", "message", "correlationId" }`; validation errors are `400`. Upload errors include `413` for size/content limits, `415` for unsupported types, `422` for unreadable files, and `409` for duplicate content.
 
 ### Upload a document
 
@@ -349,7 +359,7 @@ Other available Gradle commands:
 ./gradlew bootJar
 ```
 
-An optional Node.js evaluation runner is documented in [evaluation/README.md](evaluation/README.md). It requires a separately controlled evaluation dataset and a running backend; the checked-in evaluation tooling does not provide production quality metrics or cost estimates by itself.
+The Node.js evaluation suite is documented in [eka_eval_suite/README.md](eka_eval_suite/README.md). All maintained evaluation code, datasets, and tests live under `eka_eval_suite/`. It requires a separately controlled evaluation dataset and a running backend; the checked-in evaluation tooling does not provide production quality metrics or cost estimates by itself.
 
 ## Docker
 
@@ -386,15 +396,15 @@ The API returns response and retrieval timing. Model token usage, provider costs
 
 ## Troubleshooting
 
-| Symptom | Check |
-|---|---|
-| Backend cannot connect to PostgreSQL | Confirm `docker compose ps`, host port (`5433` by default), database/user/password, and that `EKA_DB_URL` matches Compose settings. |
-| Flyway fails while creating extensions | Use a PostgreSQL image with pgvector and permission to create `vector` and `pgcrypto`; Compose provides the configured pgvector image. |
-| Local login works but document/chat access is empty | The local Basic user is in memory; seed a database `app_users` row and collection grant with the same subject. |
-| OpenAI provider fails at startup | Set `OPENAI_API_KEY` when either chat or embedding provider is `openai`; make sure embedding dimensions and vector table match. |
-| Ollama calls fail | Start Ollama, check `OLLAMA_BASE_URL`, and confirm the exact chat/embedding model has been pulled. For a containerized backend, `localhost` is not the host Ollama service. |
-| Upload is accepted but does not become indexed | Check the ingestion worker is enabled, inspect the document's status/failure reason, and verify embedding provider availability and configured dimensions. |
-| No answer or no citations | Check the caller's collection grants, document `INDEXED` status, retrieval filters, and similarity threshold. Responses intentionally abstain if evidence is not eligible. |
+| Symptom                                             | Check                                                                                                                                                                       |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend cannot connect to PostgreSQL                | Confirm `docker compose ps`, host port (`5433` by default), database/user/password, and that `EKA_DB_URL` matches Compose settings.                                         |
+| Flyway fails while creating extensions              | Use a PostgreSQL image with pgvector and permission to create `vector` and `pgcrypto`; Compose provides the configured pgvector image.                                      |
+| Local login works but document/chat access is empty | The local Basic user is in memory; seed a database `app_users` row and collection grant with the same subject.                                                              |
+| OpenAI provider fails at startup                    | Set `OPENAI_API_KEY` when either chat or embedding provider is `openai`; make sure embedding dimensions and vector table match.                                             |
+| Ollama calls fail                                   | Start Ollama, check `OLLAMA_BASE_URL`, and confirm the exact chat/embedding model has been pulled. For a containerized backend, `localhost` is not the host Ollama service. |
+| Upload is accepted but does not become indexed      | Check the ingestion worker is enabled, inspect the document's status/failure reason, and verify embedding provider availability and configured dimensions.                  |
+| No answer or no citations                           | Check the caller's collection grants, document `INDEXED` status, retrieval filters, and similarity threshold. Responses intentionally abstain if evidence is not eligible.  |
 
 ## Known limitations and future work
 
@@ -408,7 +418,7 @@ Important current limitations include:
 - No explicit CORS policy, production deployment orchestration, or deployment-specific operational/observability stack was found in the repository.
 - The runtime default PDF page limit is 1,000. The integration test overrides it to 500 to verify the configured limit and its distinct API error.
 
-The implementation does have query rewriting and corrective evidence evaluation; those should not be described as planned-only capabilities. See [evaluation/README.md](evaluation/README.md) for what the current runner reports and what evaluation inputs remain outstanding.
+The implementation does have query rewriting and corrective evidence evaluation; those should not be described as planned-only capabilities. See [eka_eval_suite/README.md](eka_eval_suite/README.md) for the evaluation workflow and remaining input limitations.
 
 ## Related repositories
 

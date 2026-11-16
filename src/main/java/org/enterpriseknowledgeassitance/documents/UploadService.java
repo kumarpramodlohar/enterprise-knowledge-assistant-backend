@@ -19,6 +19,7 @@ import org.enterpriseknowledgeassitance.extraction.ExtractedSegment;
 import org.enterpriseknowledgeassitance.extraction.ExtractionException;
 import org.enterpriseknowledgeassitance.extraction.ExtractionService;
 import org.enterpriseknowledgeassitance.security.AccessService;
+import org.enterpriseknowledgeassitance.security.IdentityAssertion;
 import org.enterpriseknowledgeassitance.web.ApiException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -69,7 +70,21 @@ public class UploadService {
 
     public UploadAcceptedResponse accept(String subject, UUID collectionId, MultipartFile file, String version,
             String documentType, List<String> tags) {
-        access.requireManage(subject, collectionId);
+        return accept(subject, null, collectionId, file, version, documentType, tags);
+    }
+
+    public UploadAcceptedResponse accept(IdentityAssertion identity, UUID collectionId, MultipartFile file,
+            String version, String documentType, List<String> tags) {
+        return accept(identity.publicSubject(), identity, collectionId, file, version, documentType, tags);
+    }
+
+    private UploadAcceptedResponse accept(String subject, IdentityAssertion identity, UUID collectionId,
+            MultipartFile file, String version, String documentType, List<String> tags) {
+        if (identity == null) {
+            access.requireManage(subject, collectionId);
+        } else {
+            access.requireManage(identity, collectionId);
+        }
 
         List<String> cleanTags = tags == null ? List.of() : tags.stream().map(String::strip).filter(t -> !t.isEmpty()).toList();
         validateMetadata(version, documentType, cleanTags);

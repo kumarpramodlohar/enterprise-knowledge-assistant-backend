@@ -9,10 +9,17 @@ import org.springframework.stereotype.Component;
 @Component
 class ProfileGuard {
 
-    @Autowired
     ProfileGuard(Environment env) {
+        this(env, new AuthServiceProperties(false, null, null, null, null, null, null, 0, 0));
+    }
+
+    @Autowired
+    ProfileGuard(Environment env, AuthServiceProperties authService) {
         if (env.acceptsProfiles(Profiles.of("local")) && env.acceptsProfiles(Profiles.of("deployed"))) {
             throw new IllegalStateException("Profiles 'local' and 'deployed' must not be active together");
+        }
+        if (env.acceptsProfiles(Profiles.of("local")) && authService.enabled()) {
+            throw new IllegalStateException("Auth-service integration is not supported with the local profile");
         }
     }
 }

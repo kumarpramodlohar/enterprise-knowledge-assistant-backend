@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.env.MockEnvironment;
 
 class ChatServiceTest {
 
@@ -137,6 +138,63 @@ class ChatServiceTest {
                 org.mockito.ArgumentMatchers.any());
         verify(client, never()).prompt();
     }
+
+        @Test
+        void evaluationProfileReturnsOnlyAuthorizedCandidateMetadataEvenWhenAnswerAbstains() throws Exception {
+                ChunkIndexer indexer = mock(ChunkIndexer.class);
+                AccessService access = mock(AccessService.class);
+                ChatClient.Builder builder = mock(ChatClient.Builder.class);
+                when(access.readableCollectionIds("member")).thenReturn(List.of(allowed));
+                when(builder.build()).thenReturn(mock(ChatClient.class));
+                SearchHit candidate = hit("confidential passage text");
+                when(indexer.searchWithDiagnostics("question", List.of(allowed), 5, 0.70, SearchFilter.NONE))
+                                .thenReturn(new ChunkIndexer.SearchResults(List.of(candidate), List.of(candidate), List.of()));
+
+                ChatService service = new ChatService(indexer, access, builder,
+                                mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                                properties(Duration.ofSeconds(1), 100));
+                MockEnvironment evaluationEnvironment = new MockEnvironment();
+                evaluationEnvironment.setActiveProfiles("local", "evaluation");
+                service.configureEvaluationDiagnostics(evaluationEnvironment);
+
+                var result = service.query("member", new ChatQueryRequest("question", null));
+
+                assertThat(result.insufficientEvidence()).isTrue();
+                assertThat(result.retrievalDiagnostics().candidates()).singleElement().satisfies(diagnostic -> {
+                        assertThat(diagnostic.chunkId()).isEqualTo(allowedChunk);
+                        assertThat(diagnostic.rank()).isEqualTo(1);
+                        assertThat(diagnostic.similarityScore()).isEqualTo(0.91);
+                });
+        }
+
+        @Test
+        void deployedEvaluationProfileNeverReturnsRetrievalDiagnostics() throws Exception {
+                ChunkIndexer indexer = mock(ChunkIndexer.class);
+                AccessService access = mock(AccessService.class);
+                ChatClient.Builder builder = mock(ChatClient.Builder.class);
+                when(access.readableCollectionIds("member")).thenReturn(List.of(allowed));
+                when(builder.build()).thenReturn(mock(ChatClient.class));
+                when(indexer.search(anyString(), org.mockito.ArgumentMatchers.anyCollection(),
+                                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyDouble(),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+
+                ChatService service = new ChatService(indexer, access, builder,
+                                mock(org.enterpriseknowledgeassitance.chat.crag.RetrievalEvaluator.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.ActionSelector.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.KnowledgeRefiner.class),
+                                mock(org.enterpriseknowledgeassitance.chat.crag.QueryRewriter.class),
+                                properties(Duration.ofSeconds(1), 100));
+                MockEnvironment deployedEvaluationEnvironment = new MockEnvironment();
+                deployedEvaluationEnvironment.setActiveProfiles("evaluation", "deployed");
+                service.configureEvaluationDiagnostics(deployedEvaluationEnvironment);
+
+                var result = service.query("member", new ChatQueryRequest("question", null));
+
+                assertThat(result.retrievalDiagnostics()).isNull();
+        }
 
     @Test
     void chatProviderTimeoutReturnsSafeServiceUnavailable() throws Exception {

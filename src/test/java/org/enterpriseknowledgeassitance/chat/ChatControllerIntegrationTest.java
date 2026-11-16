@@ -32,6 +32,7 @@ class ChatControllerIntegrationTest {
                 .andExpect(jsonPath("$.insufficientEvidence").value(true))
                 .andExpect(jsonPath("$.answer").doesNotExist())
                 .andExpect(jsonPath("$.citations").isEmpty())
+                .andExpect(jsonPath("$.retrievalDiagnostics").doesNotExist())
                 .andExpect(jsonPath("$.retrievalMs").isNumber());
     }
 

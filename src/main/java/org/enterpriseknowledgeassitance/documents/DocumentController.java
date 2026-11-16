@@ -1,8 +1,10 @@
 package org.enterpriseknowledgeassitance.documents;
 
-import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
+import org.enterpriseknowledgeassitance.security.AuthServiceProperties;
+import org.enterpriseknowledgeassitance.security.IdentityAssertion;
+import org.springframework.security.core.Authentication;
 import org.enterpriseknowledgeassitance.api.UploadAcceptedResponse;
 import org.enterpriseknowledgeassitance.api.ApiPaths;
 import org.springframework.http.HttpStatus;
@@ -27,40 +29,55 @@ class DocumentController {
 
     private final UploadService uploads;
     private final DocumentService documents;
+    private final AuthServiceProperties authServiceProperties;
 
-    DocumentController(UploadService uploads, DocumentService documents) {
+    DocumentController(UploadService uploads, DocumentService documents, AuthServiceProperties authServiceProperties) {
         this.uploads = uploads;
         this.documents = documents;
+        this.authServiceProperties = authServiceProperties;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
-    UploadAcceptedResponse upload(Principal principal, @RequestParam("collectionId") UUID collectionId,
+    UploadAcceptedResponse upload(Authentication authentication, @RequestParam("collectionId") UUID collectionId,
             @RequestParam("file") MultipartFile file, @RequestParam(value = "version", required = false) String version,
             @RequestParam(value = "documentType", required = false) String documentType,
             @RequestParam(value = "tags", required = false) List<String> tags) {
-        return uploads.accept(principal.getName(), collectionId, file, version, documentType, tags);
+        return authServiceProperties.enabled()
+                ? uploads.accept(identity(authentication), collectionId, file, version, documentType, tags)
+                : uploads.accept(authentication.getName(), collectionId, file, version, documentType, tags);
     }
 
     @GetMapping
-    DocumentPage list(Principal principal, @Valid DocumentListQuery query) {
-        return documents.list(principal.getName(), query);
+    DocumentPage list(Authentication authentication, @Valid DocumentListQuery query) {
+        return authServiceProperties.enabled() ? documents.list(identity(authentication), query)
+                : documents.list(authentication.getName(), query);
     }
 
     @GetMapping("/{id}")
-    DocumentResponse get(Principal principal, @PathVariable UUID id) {
-        return documents.get(principal.getName(), id);
+    DocumentResponse get(Authentication authentication, @PathVariable UUID id) {
+        return authServiceProperties.enabled() ? documents.get(identity(authentication), id)
+                : documents.get(authentication.getName(), id);
     }
 
     @PostMapping("/{id}/reindex")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    DocumentResponse reindex(Principal principal, @PathVariable UUID id) {
-        return documents.reindex(principal.getName(), id);
+    DocumentResponse reindex(Authentication authentication, @PathVariable UUID id) {
+        return authServiceProperties.enabled() ? documents.reindex(identity(authentication), id)
+                : documents.reindex(authentication.getName(), id);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void delete(Principal principal, @PathVariable UUID id) {
-        documents.delete(principal.getName(), id);
+    void delete(Authentication authentication, @PathVariable UUID id) {
+        if (authServiceProperties.enabled()) {
+            documents.delete(identity(authentication), id);
+        } else {
+            documents.delete(authentication.getName(), id);
+        }
+    }
+
+    private IdentityAssertion identity(Authentication authentication) {
+        return IdentityAssertion.from(authentication, authServiceProperties.localNamespace());
     }
 }

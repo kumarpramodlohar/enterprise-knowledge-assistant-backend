@@ -120,22 +120,27 @@ public class ChunkIndexer {
 
     public List<SearchHit> search(String query, Collection<UUID> collectionIds, int topK, double minSimilarity,
             SearchFilter filter) throws EmbeddingFailedException {
-        return searchInternal(query, collectionIds, topK, minSimilarity, filter, false);
+        return searchInternal(query, collectionIds, topK, minSimilarity, filter).selectedHits();
     }
 
     /** Returns the authorized nearest candidates before the evidence threshold for CRAG evaluation. */
     public List<SearchHit> searchCandidates(String query, Collection<UUID> collectionIds, int topK,
             double thresholdForDiagnostics, SearchFilter filter) throws EmbeddingFailedException {
-        return searchInternal(query, collectionIds, topK, thresholdForDiagnostics, filter, true);
+        return searchInternal(query, collectionIds, topK, thresholdForDiagnostics, filter).topKCandidates();
     }
 
-    private List<SearchHit> searchInternal(String query, Collection<UUID> collectionIds, int topK,
-            double minSimilarity, SearchFilter filter, boolean includeBelowThreshold) throws EmbeddingFailedException {
+    public SearchResults searchWithDiagnostics(String query, Collection<UUID> collectionIds, int topK,
+            double minSimilarity, SearchFilter filter) throws EmbeddingFailedException {
+        return searchInternal(query, collectionIds, topK, minSimilarity, filter);
+    }
+
+    private SearchResults searchInternal(String query, Collection<UUID> collectionIds, int topK,
+            double minSimilarity, SearchFilter filter) throws EmbeddingFailedException {
         if (collectionIds.isEmpty() || topK < 1) {
-            return List.of();
+            return SearchResults.empty();
         }
         if (!hasEligibleChunks(collectionIds, filter)) {
-            return List.of();
+            return SearchResults.empty();
         }
         String q = literal(embedAll(List.of(query)).get(0));
         boolean hasTags = filter.tags() != null && !filter.tags().isEmpty();
@@ -157,9 +162,18 @@ public class ChunkIndexer {
                     CorrelationIdFilter.current(), i + 1, candidate.documentId(), candidate.chunkId(),
                     candidate.pageNumber(), candidate.score(), candidate.score() >= minSimilarity);
         }
+        List<SearchHit> diagnosticCandidates = candidates.stream().limit(diagnosticCandidateCount).toList();
+        List<SearchHit> topKCandidates = candidates.stream().limit(topK).toList();
         // Preserve the previous behavior: threshold applies only to the original top-K window.
-        return candidates.stream().limit(topK)
-                .filter(h -> includeBelowThreshold || h.score() >= minSimilarity).toList();
+        List<SearchHit> selectedHits = topKCandidates.stream().filter(hit -> hit.score() >= minSimilarity).toList();
+        return new SearchResults(diagnosticCandidates, topKCandidates, selectedHits);
+    }
+
+    public record SearchResults(List<SearchHit> diagnosticCandidates, List<SearchHit> topKCandidates,
+            List<SearchHit> selectedHits) {
+        private static SearchResults empty() {
+            return new SearchResults(List.of(), List.of(), List.of());
+        }
     }
 
     private boolean hasEligibleChunks(Collection<UUID> collectionIds, SearchFilter filter) {

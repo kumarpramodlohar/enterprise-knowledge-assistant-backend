@@ -17,6 +17,8 @@ import org.enterpriseknowledgeassitance.api.ChatFilters;
 import org.enterpriseknowledgeassitance.api.ChatQueryRequest;
 import org.enterpriseknowledgeassitance.api.ChatQueryResponse;
 import org.enterpriseknowledgeassitance.api.Citation;
+import org.enterpriseknowledgeassitance.api.RetrievalDiagnostic;
+import org.enterpriseknowledgeassitance.api.RetrievalDiagnostics;
 import org.enterpriseknowledgeassitance.config.EkaProperties;
 import org.enterpriseknowledgeassitance.config.WebSearchProperties;
 import org.enterpriseknowledgeassitance.chat.crag.ActionSelector;
@@ -30,10 +32,14 @@ import org.enterpriseknowledgeassitance.ingestion.EmbeddingFailedException;
 import org.enterpriseknowledgeassitance.ingestion.SearchFilter;
 import org.enterpriseknowledgeassitance.ingestion.SearchHit;
 import org.enterpriseknowledgeassitance.security.AccessService;
+import org.enterpriseknowledgeassitance.security.IdentityAssertion;
+import org.enterpriseknowledgeassitance.web.NotFoundException;
 import org.enterpriseknowledgeassitance.web.ApiException;
 import org.enterpriseknowledgeassitance.web.CorrelationIdFilter;
 import org.enterpriseknowledgeassitance.web.ErrorCodes;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -122,6 +128,7 @@ public class ChatService {
     private final long timeoutMillis;
     private ExternalSearchService externalSearch = query -> List.of();
     private WebSearchProperties webSearchProperties = new WebSearchProperties(false, "", java.time.Duration.ofSeconds(8), 5);
+    private boolean evaluationDiagnosticsEnabled;
     private final ExecutorService providerCalls = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatService(ChunkIndexer indexer, AccessService access, ChatClient.Builder builder,
@@ -145,35 +152,60 @@ public class ChatService {
         this.webSearchProperties = properties;
     }
 
+    @Autowired
+    void configureEvaluationDiagnostics(Environment environment) {
+        this.evaluationDiagnosticsEnabled = environment.acceptsProfiles(Profiles.of("evaluation"))
+                && !environment.acceptsProfiles(Profiles.of("deployed"));
+    }
+
     public ChatQueryResponse query(String subject, ChatQueryRequest request) {
+        return query(subject, null, request);
+    }
+
+    public ChatQueryResponse query(IdentityAssertion identity, ChatQueryRequest request) {
+        return query(identity.publicSubject(), identity, request);
+    }
+
+    private ChatQueryResponse query(String subject, IdentityAssertion identity, ChatQueryRequest request) {
         long started = System.nanoTime();
-        List<UUID> readable = access.readableCollectionIds(subject);
+        List<UUID> readable = identity == null ? access.readableCollectionIds(subject)
+                : access.readableCollectionIds(identity);
         ChatFilters filters = request.filters();
         if (filters != null && filters.collectionIds() != null) {
             readable = readable.stream().filter(filters.collectionIds()::contains).toList();
         }
         if (readable.isEmpty()) {
-            return insufficient(started, 0);
+            return insufficient(started, 0, emptyDiagnostics());
         }
 
         SearchFilter filter = filters == null ? SearchFilter.NONE
                 : new SearchFilter(filters.version(), filters.documentType(), filters.tags());
         long retrievalMillis;
         List<SearchHit> hits;
+        List<SearchHit> diagnosticHits = List.of();
         long retrievalStarted = System.nanoTime();
         try {
+            if (evaluationDiagnosticsEnabled) {
+            ChunkIndexer.SearchResults searchResults = indexer.searchWithDiagnostics(request.question(), readable,
+                retrieval.topK(), retrieval.similarityThreshold(), filter);
+            diagnosticHits = searchResults.diagnosticCandidates();
+            hits = cragProperties.enabled() ? searchResults.topKCandidates() : searchResults.selectedHits();
+            } else {
             hits = cragProperties.enabled()
-                    ? indexer.searchCandidates(request.question(), readable, retrieval.topK(),
-                            retrieval.similarityThreshold(), filter)
-                    : indexer.search(request.question(), readable, retrieval.topK(),
-                            retrieval.similarityThreshold(), filter);
+                ? indexer.searchCandidates(request.question(), readable, retrieval.topK(),
+                    retrieval.similarityThreshold(), filter)
+                : indexer.search(request.question(), readable, retrieval.topK(),
+                    retrieval.similarityThreshold(), filter);
+            }
         } catch (EmbeddingFailedException e) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.EMBEDDING_PROVIDER_FAILED,
                     "The search provider is temporarily unavailable");
         }
         retrievalMillis = elapsedMillis(retrievalStarted);
+        RetrievalDiagnostics retrievalDiagnostics = diagnostics(diagnosticHits);
+        ensureCurrentAccess(identity, evaluationDiagnosticsEnabled ? diagnosticHits : hits);
         if (hits.isEmpty()) {
-            return insufficient(started, retrievalMillis);
+            return insufficient(started, retrievalMillis, retrievalDiagnostics);
         }
 
         List<Evidence> evidence;
@@ -188,54 +220,69 @@ public class ChatService {
             try {
                 List<SearchHit> evaluatedHits = hits.stream()
                         .limit(cragProperties.maxEvaluatedPassages()).toList();
+                ensureCurrentAccess(identity, evaluatedHits);
                 List<CragEvaluation> evaluations = evaluator.evaluate(request.question(), evaluatedHits, deadline);
+                ensureCurrentAccess(identity, evaluatedHits);
                 ActionSelector.Action action = actionSelector.select(evaluations);
                 logEvaluation("initial", action, evaluations);
                 if (action == ActionSelector.Action.AMBIGUOUS) {
-                    return insufficient(started, retrievalMillis);
+                    return insufficient(started, retrievalMillis, retrievalDiagnostics);
                 }
                 if (action == ActionSelector.Action.CORRECT) {
                     List<SearchHit> correctHits = evaluations.stream()
                             .filter(item -> item.verdict() == CragEvaluation.Verdict.CORRECT)
                             .map(CragEvaluation::hit).toList();
-                    evidence = toEvidence(refiner.refine(request.question(), correctHits, deadline));
+                    ensureCurrentAccess(identity, correctHits);
+                    List<Evidence> refined = toEvidence(refiner.refine(request.question(), correctHits, deadline));
+                    ensureCurrentAccess(identity, refined.stream().map(Evidence::hit).toList());
+                    evidence = refined;
                 } else {
                     if (cragProperties.maxRewrites() == 0) {
-                        return insufficient(started, retrievalMillis);
+                        return insufficient(started, retrievalMillis, retrievalDiagnostics);
                     }
                     String rewrittenQuestion = rewriter.rewrite(request.question(), deadline);
                     long retryStarted = System.nanoTime();
+                    if (identity != null) {
+                        readable = intersect(readable, access.readableCollectionIds(identity));
+                    }
                     List<SearchHit> retryHits = searchCandidatesWithinCragDeadline(
                             rewrittenQuestion, readable, filter, deadline);
                     retrievalMillis += elapsedMillis(retryStarted);
                     if (retryHits.isEmpty()) {
                         if (request.allowExternalSearch() && webSearchProperties.enabled()
                                 && !webSearchProperties.apiKey().isBlank()) {
-                            ChatQueryResponse external = externalAnswer(request.question(), retrievalMillis, started);
+                            ChatQueryResponse external = externalAnswer(request.question(), retrievalMillis, started,
+                                    retrievalDiagnostics);
                             if (external != null) return external;
                         }
-                        return insufficient(started, retrievalMillis);
+                        return insufficient(started, retrievalMillis, retrievalDiagnostics);
                     }
                     List<SearchHit> retryCandidates = retryHits.stream()
                             .limit(cragProperties.maxEvaluatedPassages()).toList();
+                    ensureCurrentAccess(identity, retryCandidates);
                     List<CragEvaluation> retryEvaluations = evaluator.evaluate(
                             rewrittenQuestion, retryCandidates, deadline);
+                    ensureCurrentAccess(identity, retryCandidates);
                     ActionSelector.Action retryAction = actionSelector.select(retryEvaluations);
                     logEvaluation("retry", retryAction, retryEvaluations);
                     if (retryAction != ActionSelector.Action.CORRECT) {
                         if (retryAction == ActionSelector.Action.INCORRECT && request.allowExternalSearch()
                                 && webSearchProperties.enabled() && !webSearchProperties.apiKey().isBlank()) {
-                            ChatQueryResponse external = externalAnswer(request.question(), retrievalMillis, started);
+                                ChatQueryResponse external = externalAnswer(request.question(), retrievalMillis, started,
+                                        retrievalDiagnostics);
                             if (external != null) {
                                 return external;
                             }
                         }
-                        return insufficient(started, retrievalMillis);
+                            return insufficient(started, retrievalMillis, retrievalDiagnostics);
                     }
                     List<SearchHit> correctHits = retryEvaluations.stream()
                             .filter(item -> item.verdict() == CragEvaluation.Verdict.CORRECT)
                             .map(CragEvaluation::hit).toList();
-                    evidence = toEvidence(refiner.refine(rewrittenQuestion, correctHits, deadline));
+                    ensureCurrentAccess(identity, correctHits);
+                    List<Evidence> refined = toEvidence(refiner.refine(rewrittenQuestion, correctHits, deadline));
+                    ensureCurrentAccess(identity, refined.stream().map(Evidence::hit).toList());
+                    evidence = refined;
                     answerQuestion = request.question();
                 }
             } catch (CragStageException e) {
@@ -245,7 +292,7 @@ public class ChatService {
             }
         }
         if (evidence.isEmpty()) {
-            return insufficient(started, retrievalMillis);
+            return insufficient(started, retrievalMillis, retrievalDiagnostics);
         }
 
         List<SearchHit> contextHits = new ArrayList<>();
@@ -267,18 +314,20 @@ public class ChatService {
             contextHits.add(hit);
         }
         if (contextHits.isEmpty()) {
-            return insufficient(started, retrievalMillis);
+            return insufficient(started, retrievalMillis, retrievalDiagnostics);
         }
 
+        ensureCurrentAccess(identity, contextHits);
         String answer = callModel(answerQuestion, evidencePrompt.toString());
         if (answer == null || answer.isBlank()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.CHAT_PROVIDER_FAILED,
                     "The answer provider returned no answer");
         }
+        ensureCurrentAccess(identity, contextHits);
         List<Citation> citations = contextHits.stream().map(hit -> new Citation(hit.documentId(), hit.fileName(),
                 hit.chunkId(), hit.pageNumber(), hit.section(), snippet(hit.text()))).toList();
         return new ChatQueryResponse(answer, false, citations, CorrelationIdFilter.current(), elapsedMillis(started),
-                retrievalMillis);
+            retrievalMillis, retrievalDiagnostics);
     }
 
     private List<SearchHit> searchCandidatesWithinCragDeadline(String question, List<UUID> readable,
@@ -287,6 +336,7 @@ public class ChatService {
         if (remaining <= 0) {
             throw new CragStageException("retrieve");
         }
+
         Future<List<SearchHit>> search = providerCalls.submit(() -> indexer.searchCandidates(question, readable,
                 retrieval.topK(), retrieval.similarityThreshold(), filter));
         try {
@@ -302,11 +352,26 @@ public class ChatService {
         }
     }
 
+    private void ensureCurrentAccess(IdentityAssertion identity, List<SearchHit> hits) {
+        if (identity == null || hits.isEmpty()) {
+            return;
+        }
+        List<UUID> currentScopes = access.readableCollectionIds(identity);
+        if (hits.stream().anyMatch(hit -> !currentScopes.contains(hit.collectionId()))) {
+            throw new NotFoundException();
+        }
+    }
+
+    private static List<UUID> intersect(List<UUID> left, List<UUID> right) {
+        return left.stream().filter(right::contains).toList();
+    }
+
     private static List<Evidence> toEvidence(List<KnowledgeRefiner.RefinedPassage> passages) {
         return passages.stream().map(item -> new Evidence(item.hit(), item.text())).toList();
     }
 
-    private ChatQueryResponse externalAnswer(String question, long retrievalMillis, long started) {
+            private ChatQueryResponse externalAnswer(String question, long retrievalMillis, long started,
+                RetrievalDiagnostics retrievalDiagnostics) {
         Future<List<ExternalSearchResult>> search = providerCalls.submit(() -> externalSearch.search(question));
         List<ExternalSearchResult> results;
         try {
@@ -346,7 +411,7 @@ public class ChatService {
             log.info("External search completed correlationId={} resultCount={}",
                     CorrelationIdFilter.current(), citations.size());
             return new ChatQueryResponse(answer, false, List.copyOf(citations), CorrelationIdFilter.current(),
-                    elapsedMillis(started), retrievalMillis);
+                    elapsedMillis(started), retrievalMillis, retrievalDiagnostics);
         } catch (RuntimeException e) {
             log.warn("External answer generation failed correlationId={} status=unavailable",
                     CorrelationIdFilter.current());
@@ -393,9 +458,26 @@ public class ChatService {
         }
     }
 
-    private ChatQueryResponse insufficient(long started, long retrievalMillis) {
+        private ChatQueryResponse insufficient(long started, long retrievalMillis,
+            RetrievalDiagnostics retrievalDiagnostics) {
         return new ChatQueryResponse(null, true, List.of(), CorrelationIdFilter.current(),
-                elapsedMillis(started), retrievalMillis);
+                elapsedMillis(started), retrievalMillis, retrievalDiagnostics);
+    }
+
+    private RetrievalDiagnostics emptyDiagnostics() {
+        return evaluationDiagnosticsEnabled ? new RetrievalDiagnostics(List.of()) : null;
+    }
+
+    private RetrievalDiagnostics diagnostics(List<SearchHit> hits) {
+        if (!evaluationDiagnosticsEnabled) {
+            return null;
+        }
+        List<RetrievalDiagnostic> diagnostics = new ArrayList<>(hits.size());
+        for (int i = 0; i < hits.size(); i++) {
+            SearchHit hit = hits.get(i);
+            diagnostics.add(new RetrievalDiagnostic(hit.chunkId(), i + 1, hit.score()));
+        }
+        return new RetrievalDiagnostics(diagnostics);
     }
 
     @PreDestroy

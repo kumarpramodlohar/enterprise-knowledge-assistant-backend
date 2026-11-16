@@ -20,6 +20,7 @@ public final class ErrorCodes {
     public static final String EMBEDDING_DIMENSION_MISMATCH = "EMBEDDING_DIMENSION_MISMATCH";
     public static final String CHAT_PROVIDER_FAILED = "CHAT_PROVIDER_FAILED";
     public static final String CHAT_PROVIDER_TIMEOUT = "CHAT_PROVIDER_TIMEOUT";
+    public static final String AUTHORIZATION_SERVICE_UNAVAILABLE = "AUTHORIZATION_SERVICE_UNAVAILABLE";
 
     private ErrorCodes() {}
 }

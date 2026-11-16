@@ -13,6 +13,7 @@ import org.enterpriseknowledgeassitance.api.DocumentResponse;
 import org.enterpriseknowledgeassitance.api.DocumentStatus;
 import org.enterpriseknowledgeassitance.config.EkaProperties;
 import org.enterpriseknowledgeassitance.security.AccessService;
+import org.enterpriseknowledgeassitance.security.IdentityAssertion;
 import org.enterpriseknowledgeassitance.web.ApiException;
 import org.enterpriseknowledgeassitance.web.ErrorCodes;
 import org.enterpriseknowledgeassitance.web.NotFoundException;
@@ -76,9 +77,18 @@ public class DocumentService {
     }
 
     public DocumentPage list(String subject, DocumentListQuery q) {
+        return list(subject, null, q);
+    }
+
+    public DocumentPage list(IdentityAssertion identity, DocumentListQuery q) {
+        return list(identity.publicSubject(), identity, q);
+    }
+
+    private DocumentPage list(String subject, IdentityAssertion identity, DocumentListQuery q) {
         int page = q.pageOrDefault();
         int size = q.sizeOrDefault();
-        List<UUID> readable = access.readableCollectionIds(subject);
+        List<UUID> readable = identity == null ? access.readableCollectionIds(subject)
+                : access.readableCollectionIds(identity);
         if (readable.isEmpty()) {
             return new DocumentPage(List.of(), page, size, 0);
         }
@@ -97,14 +107,39 @@ public class DocumentService {
     }
 
     public DocumentResponse get(String subject, UUID id) {
-        access.requireReadableDocument(subject, id);
+        return get(subject, null, id);
+    }
+
+    public DocumentResponse get(IdentityAssertion identity, UUID id) {
+        return get(identity.publicSubject(), identity, id);
+    }
+
+    private DocumentResponse get(String subject, IdentityAssertion identity, UUID id) {
+        if (identity == null) {
+            access.requireReadableDocument(subject, id);
+        } else {
+            access.requireReadableDocument(identity, id);
+        }
         return jdbc.sql(GET).param("d", id).query(DocumentService::map).optional().orElseThrow(NotFoundException::new);
     }
 
     /** Re-index is available only after the current ingestion has finished. */
     public DocumentResponse reindex(String subject, UUID id) {
-        UUID collectionId = access.requireReadableDocument(subject, id);
-        access.requireManage(subject, collectionId);
+        return reindex(subject, null, id);
+    }
+
+    public DocumentResponse reindex(IdentityAssertion identity, UUID id) {
+        return reindex(identity.publicSubject(), identity, id);
+    }
+
+    private DocumentResponse reindex(String subject, IdentityAssertion identity, UUID id) {
+        UUID collectionId = identity == null ? access.requireReadableDocument(subject, id)
+                : access.requireReadableDocument(identity, id);
+        if (identity == null) {
+            access.requireManage(subject, collectionId);
+        } else {
+            access.requireManage(identity, collectionId);
+        }
         tx.executeWithoutResult(s -> {
             if (jdbc.sql(REQUEUE).param("d", id).update() != 1) {
                 requireNotBusyOrNotFound(id);
@@ -113,13 +148,26 @@ public class DocumentService {
                     .update();
             audit.record(id, collectionId, "REINDEX", "SUCCESS", subject);
         });
-        return get(subject, id);
+        return get(subject, identity, id);
     }
 
     /** Content becomes inaccessible immediately; chunks, vectors and staged text are removed by the purge. */
     public void delete(String subject, UUID id) {
-        UUID collectionId = access.requireReadableDocument(subject, id);
-        access.requireManage(subject, collectionId);
+        delete(subject, null, id);
+    }
+
+    public void delete(IdentityAssertion identity, UUID id) {
+        delete(identity.publicSubject(), identity, id);
+    }
+
+    private void delete(String subject, IdentityAssertion identity, UUID id) {
+        UUID collectionId = identity == null ? access.requireReadableDocument(subject, id)
+                : access.requireReadableDocument(identity, id);
+        if (identity == null) {
+            access.requireManage(subject, collectionId);
+        } else {
+            access.requireManage(identity, collectionId);
+        }
         tx.executeWithoutResult(s -> {
             if (jdbc.sql(SOFT_DELETE).param("by", subject).param("days", purgeAfterDays).param("d", id).update() == 0) {
                 requireNotBusyOrNotFound(id);

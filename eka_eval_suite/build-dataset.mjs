@@ -6,7 +6,7 @@ const [seedPath, outPath] = process.argv.slice(2);
 const collection = process.env.EKA_EVAL_COLLECTION;
 if (!seedPath || !outPath || !collection) {
   throw new Error(
-    "Usage: EKA_EVAL_COLLECTION=<name> node evaluation/build-dataset.mjs <seed.jsonl> <out.jsonl> (uses PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE)",
+    "Usage: EKA_EVAL_COLLECTION=<name> node eka_eval_suite/build-dataset.mjs <seed.jsonl> <out.jsonl> (uses PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE)",
   );
 }
 

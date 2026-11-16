@@ -43,6 +43,7 @@ application-local.yaml
 logs/
 tmp/
 uploads/
+eka_eval_suite/reports/
 
 ### OS ###
 .DS_Store

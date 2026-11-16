@@ -1,0 +1,14 @@
+{
+  "version": "fixture-1",
+  "status": "fixture-only",
+  "source": "synthetic",
+  "sourceDatasetId": "eka-retrieval-fixture-v1",
+  "authorizedScope": "isolated-fixture-only",
+  "corpusVersion": "fixture-corpus",
+  "indexId": "fixture-index",
+  "chunkingConfig": "fixture-only",
+  "embeddingConfig": "fixture-only",
+  "reviewer": "non-gold-fixture",
+  "reviewDate": "2026-11-16",
+  "split": "fixture"
+}

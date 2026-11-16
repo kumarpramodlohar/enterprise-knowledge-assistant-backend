@@ -124,6 +124,21 @@ class ChunkIndexerIntegrationTest {
     }
 
     @Test
+    void searchWithDiagnosticsSeparatesCandidateWindowFromThresholdSelectedTopK() throws Exception {
+        index(docA, "refunds are issued within thirty days");
+        index(docB, "refunds for flights follow airline rules");
+
+        ChunkIndexer.SearchResults results = indexer.searchWithDiagnostics(
+                "refunds", List.of(colA, colB), 1, 1.0, SearchFilter.NONE);
+
+        assertThat(results.diagnosticCandidates()).hasSize(2);
+        assertThat(results.topKCandidates()).hasSize(1);
+        assertThat(results.selectedHits()).isEmpty();
+        assertThat(results.diagnosticCandidates()).extracting(SearchHit::score)
+                .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+    }
+
+    @Test
     void softDeletedDocumentsAndLowSimilarityAreExcluded() throws Exception {
         index(docA, "refunds are issued within thirty days");
         assertThat(indexer.search("quantum chromodynamics", List.of(colA), 5, 0.7, SearchFilter.NONE)).isEmpty();
