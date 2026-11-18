@@ -18,7 +18,7 @@ The current Node runner authenticates with HTTP Basic using `EKA_LOCAL_USER` and
 
 ### One-command local retrieval run
 
-`bash eka_eval_suite/run-local.sh` checks the local toolchain and reviewed dataset sidecar, starts the Compose PostgreSQL service, builds and launches the backend with `local,evaluation`, verifies the local Ollama models and the user's readable collection scope, runs the retrieval CLI, and stops the backend process afterward. PostgreSQL is left running. It refuses non-Ollama providers, enabled CRAG/web search, non-loopback Ollama URLs, mismatched thresholds/configuration, and datasets not marked `reviewed-gold`.
+`bash eka_eval_suite/run-local.sh` checks the local toolchain and reviewed dataset sidecar, starts the Compose PostgreSQL service, builds and launches the backend with `local,evaluation`, verifies the local Ollama models and the user's readable collection scope, runs the retrieval CLI, and stops the backend process afterward. PostgreSQL is left running. It supports ollama or openai providers (set via backend `.env`; openai needs `OPENAI_API_KEY` and sends evaluation text to OpenAI, so use only authorized content). CRAG is configurable via `EKA_CRAG_ENABLED` (default false). It refuses enabled web search, non-loopback Ollama URLs, mismatched thresholds/configuration, and datasets not marked `reviewed-gold`.
 
 Before running it, create the backend `.env` from `.env.example`, start Ollama locally and pull the configured chat/embedding models. Export these values in the shell that launches the script:
 
@@ -41,7 +41,7 @@ The dataset sidecar must have `status: "reviewed-gold"`; its `authorizedScope` m
 
 ### Run the retrieval stage
 
-For a single-command local-only run, use `bash eka_eval_suite/run-local.sh` from the backend repository root. It requires JDK 21+, Node.js 20+, Docker Compose, a backend `.env`, local Ollama chat and embedding models, an authorized local Basic-auth user, and a reviewed-gold dataset with a provenance sidecar. It starts PostgreSQL and the backend, runs the API preflight and retrieval evaluation, then stops the backend while leaving PostgreSQL running. It refuses hosted providers, enabled CRAG/web search, non-reviewed datasets, scope/configuration mismatches, and non-loopback endpoints.
+For a single-command local-only run, use `bash eka_eval_suite/run-local.sh` from the backend repository root. It requires JDK 21+, Node.js 20+, Docker Compose, a backend `.env`, local Ollama chat and embedding models, an authorized local Basic-auth user, and a reviewed-gold dataset with a provenance sidecar. It starts PostgreSQL and the backend, runs the API preflight and retrieval evaluation, then stops the backend while leaving PostgreSQL running. CRAG is configurable via `EKA_CRAG_ENABLED` (default false). It refuses enabled web search, non-reviewed datasets, scope/configuration mismatches, and non-loopback endpoints.
 
 Export the evaluation-specific values before invoking it; credentials are read from the shell environment, never printed by the script:
 
@@ -113,6 +113,43 @@ node eka_eval_suite/record-approval.mjs eka_eval_suite/reports/<run>.json /acces
 The writer checks that the report hash and run ID match and uses exclusive creation, so an existing record cannot be overwritten. Keep approval files beside the access-controlled report store; never put question, answer, passage, credential, or provider text in the record.
 
 Without raw-candidate diagnostics, retrieval scores are labeled citation-based. The runner reports raw-candidate Recall@K, MRR, and hit rate when the evaluation profile returns the diagnostics field. Misses outside the returned candidate window are classified as absent from that window; this does not assert that a chunk is absent from the entire index.
+
+## Reading the per-case retrieval report
+
+Each entry in the report JSON's per-case table describes one dataset case. Example (chunk IDs shortened):
+
+```json
+{
+  "id": "VS-031", "category": "enumset", "status": "measured", "method": "retrieval-based",
+  "answerable": true, "eligibleForRecall": true,
+  "goldIds": ["8d45"],
+  "retrievedIds": ["30ea", "8d45", "ed63", "d641", "44d7"],
+  "foundIds": ["8d45"],
+  "recallAtK": 1, "recallAt5": 1, "reciprocalRank": 0.5, "hitRate": 1,
+  "misses": [], "diagnosticCandidateCount": 10,
+  "citationFieldCompleteness": 1, "evidenceClassificationCorrect": true, "insufficientEvidence": false,
+  "latencyMs": 17818.09, "retrievalMs": 632,
+  "groundedness": null, "usefulness": null, "error": null
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `measured` (response received), `unavailable` (call errored), or `not-run`. |
+| `method` | `retrieval-based` when raw candidates came from the `evaluation` profile; `citation-based` when only returned citations were available. |
+| `eligibleForRecall` | `true` only for answerable cases with at least one gold chunk. Other cases are excluded from Recall, MRR, and hit rate. |
+| `goldIds` / `retrievedIds` / `foundIds` | Dataset `relevantChunkIds`; the top-K chunk IDs returned in rank order; the gold IDs that appear in the retrieved list. |
+| `recallAtK` / `recallAt5` | `foundIds` ÷ `goldIds` within the evaluated K window / within ranks 1–5. Example: 2 gold chunks with 1 in the top 5 gives 0.5. |
+| `reciprocalRank` | 1 ÷ rank of the first gold chunk, or 0 if none. The mean over eligible cases is MRR. In the example, gold is rank 2, so 0.5. |
+| `hitRate` | 1 if any gold chunk was retrieved, otherwise 0. |
+| `misses` | One entry per gold chunk not found, with a cause (for example below threshold, or ranked outside K). Empty here. |
+| `diagnosticCandidateCount` | Raw candidates exposed by the backend (`EKA_RETRIEVAL_DIAGNOSTIC_CANDIDATE_COUNT`); `null` when citation-based. |
+| `citationFieldCompleteness` | Share of returned citations with all required fields. This is field presence, not whether the citation supports the claim. |
+| `evidenceClassificationCorrect` | Whether the backend's `insufficientEvidence` matches the expected behavior (answer vs. abstain). |
+| `latencyMs` / `retrievalMs` | End-to-end chat query time / retrieval-stage time. A large gap means time is spent outside retrieval, mostly generation (and CRAG calls when enabled). |
+| `groundedness` / `usefulness` | Human review scores; `null` until a reviewer provides them. |
+
+In the example, the gold chunk was retrieved at rank 2: recall is full, ranking is imperfect (MRR 0.5), and nearly all latency is generation rather than retrieval. Summary Recall@K, MRR, and hit rate are means over eligible, measured cases only; the report states how many cases were used.
 
 ## Tests
 

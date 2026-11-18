@@ -1,0 +1,14 @@
+{
+  "version": "java-textbook-retrieval-candidate-v1",
+  "status": "reviewed-gold",
+  "source": "Introduction to Programming Using Java, David J. Eck, version 5.0.2; CC BY-SA 2.5",
+  "sourceDatasetId": "java-textbook-candidates-v1",
+  "authorizedScope": "ee74b34b-f759-43a7-9235-011096dcc6ca",
+  "corpusVersion": "javanotes5-5.0.2",
+  "indexId": "javatextbook-vector_store_openai",
+  "chunkingConfig": "openai-text-embedding-3-small-1536-v1",
+  "embeddingConfig": "openai-text-embedding-3-small-d1536",
+  "reviewer": "Pramod",
+  "reviewDate": "2026-11-17",
+  "split": "gold"
+}

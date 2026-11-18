@@ -1,14 +1,14 @@
 {
-  "version": "fixture-1",
-  "status": "fixture-only",
-  "source": "synthetic",
-  "sourceDatasetId": "eka-retrieval-fixture-v1",
-  "authorizedScope": "isolated-fixture-only",
-  "corpusVersion": "fixture-corpus",
-  "indexId": "fixture-index",
-  "chunkingConfig": "fixture-only",
-  "embeddingConfig": "fixture-only",
-  "reviewer": "non-gold-fixture",
-  "reviewDate": "2026-11-16",
-  "split": "fixture"
+  "version": "java-textbook-retrieval-candidate-v1",
+  "status": "draft_pending_human_review",
+  "source": "Introduction to Programming Using Java, David J. Eck, version 5.0.2; CC BY-SA 2.5",
+  "sourceDatasetId": "java-textbook-candidates-v1",
+  "authorizedScope": "ee74b34b-f759-43a7-9235-011096dcc6ca",
+  "corpusVersion": "javanotes5-5.0.2",
+  "indexId": "<actual-index-snapshot-id>",
+  "chunkingConfig": "<actual-chunking-config>",
+  "embeddingConfig": "openai-text-embedding-3-small-d1536",
+  "reviewer": "pending-human-review",
+  "reviewDate": "pending",
+  "split": "candidate"
 }

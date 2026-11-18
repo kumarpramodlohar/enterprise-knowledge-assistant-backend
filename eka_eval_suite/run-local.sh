@@ -76,42 +76,56 @@ backend_local_password="$(dotenv_value EKA_LOCAL_USER_PASSWORD)"
 
 chat_provider="$(configured_value EKA_CHAT_PROVIDER ollama)"
 embedding_provider="$(configured_value EKA_EMBEDDING_PROVIDER ollama)"
-[[ "$chat_provider" == "ollama" && "$embedding_provider" == "ollama" ]] || fail "This local-only script supports Ollama chat and embeddings only."
-[[ "$(configured_value EKA_CRAG_ENABLED false)" != "true" ]] || fail "Disable CRAG for the retrieval baseline run."
+for provider in "$chat_provider" "$embedding_provider"; do
+  [[ "$provider" == "ollama" || "$provider" == "openai" ]] || fail "Unsupported provider '$provider'; use ollama or openai."
+done
+if [[ "$chat_provider" == "openai" || "$embedding_provider" == "openai" ]]; then
+  [[ -n "$(configured_value OPENAI_API_KEY '')" ]] || fail "Set OPENAI_API_KEY when using the openai provider."
+fi
+export EKA_CRAG_ENABLED="$(configured_value EKA_CRAG_ENABLED false)"
+[[ "$EKA_CRAG_ENABLED" == "true" || "$EKA_CRAG_ENABLED" == "false" ]] || fail "EKA_CRAG_ENABLED must be true or false."
 [[ "$(configured_value EKA_WEB_SEARCH_ENABLED false)" != "true" ]] || fail "Disable web search for the retrieval baseline run."
-export EKA_CRAG_ENABLED=false
 export EKA_WEB_SEARCH_ENABLED=false
 
 export SPRING_PROFILES_ACTIVE=local,evaluation
-export EKA_CHAT_PROVIDER=ollama
-export EKA_EMBEDDING_PROVIDER=ollama
-export EKA_CRAG_ENABLED=false
-export EKA_WEB_SEARCH_ENABLED=false
-export EKA_CHAT_MODEL="$(configured_value EKA_CHAT_MODEL llama3.2:latest)"
-export EKA_EMBEDDING_MODEL="$(configured_value EKA_EMBEDDING_MODEL nomic-embed-text)"
-export EKA_EMBEDDING_DIMENSIONS="$(configured_value EKA_EMBEDDING_DIMENSIONS 768)"
-export EKA_VECTOR_TABLE="$(configured_value EKA_VECTOR_TABLE vector_store_ollama)"
-[[ "$EKA_EMBEDDING_DIMENSIONS" == "768" && "$EKA_VECTOR_TABLE" == "vector_store_ollama" ]] || fail "Local Ollama evaluation requires dimensions 768 and vector_store_ollama."
+export EKA_CHAT_PROVIDER="$chat_provider"
+export EKA_EMBEDDING_PROVIDER="$embedding_provider"
+if [[ "$chat_provider" == "openai" ]]; then default_chat_model="gpt-4o-mini"; else default_chat_model="llama3.2:latest"; fi
+if [[ "$embedding_provider" == "openai" ]]; then
+  default_embedding_model="text-embedding-3-small"; default_dimensions="1536"; default_vector_table="vector_store_openai"
+else
+  default_embedding_model="nomic-embed-text"; default_dimensions="768"; default_vector_table="vector_store_ollama"
+fi
+export EKA_CHAT_MODEL="$(configured_value EKA_CHAT_MODEL "$default_chat_model")"
+export EKA_EMBEDDING_MODEL="$(configured_value EKA_EMBEDDING_MODEL "$default_embedding_model")"
+export EKA_EMBEDDING_DIMENSIONS="$(configured_value EKA_EMBEDDING_DIMENSIONS "$default_dimensions")"
+export EKA_VECTOR_TABLE="$(configured_value EKA_VECTOR_TABLE "$default_vector_table")"
+[[ "$EKA_EMBEDDING_DIMENSIONS" =~ ^[0-9]+$ ]] || fail "EKA_EMBEDDING_DIMENSIONS must be a positive integer."
 
-export OLLAMA_BASE_URL="$(configured_value OLLAMA_BASE_URL http://localhost:11434)"
-OLLAMA_BASE_URL="$OLLAMA_BASE_URL" node --input-type=module -e '
-  const host = new URL(process.env.OLLAMA_BASE_URL).hostname;
-  if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(host)) {
-    console.error("OLLAMA_BASE_URL must point to a loopback host for this local-only script.");
-    process.exit(1);
-  }
-' || fail "Ollama must be configured on loopback only."
-ollama_tags="$(curl -fsS --max-time 5 "$OLLAMA_BASE_URL/api/tags")" || fail "Ollama is unavailable at OLLAMA_BASE_URL."
-OLLAMA_TAGS_JSON="$ollama_tags" EKA_CHAT_MODEL="$EKA_CHAT_MODEL" EKA_EMBEDDING_MODEL="$EKA_EMBEDDING_MODEL" node --input-type=module -e '
-  const models = JSON.parse(process.env.OLLAMA_TAGS_JSON).models ?? [];
-  const names = new Set(models.map((model) => model.name));
-  for (const name of [process.env.EKA_CHAT_MODEL, process.env.EKA_EMBEDDING_MODEL]) {
-    if (!names.has(name)) {
-      console.error("A configured Ollama model is not present locally.");
+if [[ "$chat_provider" == "ollama" || "$embedding_provider" == "ollama" ]]; then
+  export OLLAMA_BASE_URL="$(configured_value OLLAMA_BASE_URL http://localhost:11434)"
+  OLLAMA_BASE_URL="$OLLAMA_BASE_URL" node --input-type=module -e '
+    const host = new URL(process.env.OLLAMA_BASE_URL).hostname;
+    if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(host)) {
+      console.error("OLLAMA_BASE_URL must point to a loopback host for this local-only script.");
       process.exit(1);
     }
-  }
-' || fail "Pull the configured Ollama chat and embedding models first."
+  ' || fail "Ollama must be configured on loopback only."
+  ollama_tags="$(curl -fsS --max-time 5 "$OLLAMA_BASE_URL/api/tags")" || fail "Ollama is unavailable at OLLAMA_BASE_URL."
+  ollama_models=()
+  [[ "$chat_provider" == "ollama" ]] && ollama_models+=("$EKA_CHAT_MODEL")
+  [[ "$embedding_provider" == "ollama" ]] && ollama_models+=("$EKA_EMBEDDING_MODEL")
+  OLLAMA_TAGS_JSON="$ollama_tags" OLLAMA_REQUIRED_MODELS="$(IFS=,; printf '%s' "${ollama_models[*]}")" node --input-type=module -e '
+    const models = JSON.parse(process.env.OLLAMA_TAGS_JSON).models ?? [];
+    const names = new Set(models.map((model) => model.name));
+    for (const name of process.env.OLLAMA_REQUIRED_MODELS.split(",")) {
+      if (!names.has(name)) {
+        console.error("A configured Ollama model is not present locally.");
+        process.exit(1);
+      }
+    }
+  ' || fail "Pull the configured Ollama models first."
+fi
 
 backend_threshold="$(configured_value EKA_RETRIEVAL_SIMILARITY_THRESHOLD 0.30)"
 eval_threshold="${EKA_EVAL_SIMILARITY_THRESHOLD:-$backend_threshold}"
@@ -160,7 +174,7 @@ NODE
 
 export EKA_API_BASE_URL="http://127.0.0.1:${SERVER_PORT:-8080}"
 export EKA_EVAL_REPORT_DIR="${EKA_EVAL_REPORT_DIR:-$suite_root/reports}"
-export EKA_EVAL_MODE=baseline
+if [[ "$EKA_CRAG_ENABLED" == "true" ]]; then export EKA_EVAL_MODE=crag; else export EKA_EVAL_MODE=baseline; fi
 
 if curl -fsS --max-time 2 "$EKA_API_BASE_URL/actuator/health" >/dev/null 2>&1; then
   fail "A backend is already responding on SERVER_PORT=${SERVER_PORT:-8080}; stop it or choose another port."
